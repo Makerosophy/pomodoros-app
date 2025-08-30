@@ -52,6 +52,18 @@ function formatMinSec(total: number): string {
 type Entries = Record<string, DiaryEntry>;
 
 const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 0, currentElapsed = 0, currentPoms = 0, currentProfile }) => {
+  const [refreshKey, setRefreshKey] = React.useState(0);
+  
+  // Ascolta gli aggiornamenti del Diario
+  React.useEffect(() => {
+    const handleDiaryUpdate = () => {
+      setRefreshKey(prev => prev + 1);
+    };
+    
+    window.addEventListener('diary-updated', handleDiaryUpdate);
+    return () => window.removeEventListener('diary-updated', handleDiaryUpdate);
+  }, []);
+  
   const entries = useMemo<Entries>(() => {
     try {
       const raw = localStorage.getItem(STORAGE.DIARY);
@@ -60,7 +72,7 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
     } catch {
       return {} as Entries;
     }
-  }, []);
+  }, [refreshKey]);
 
   // Merge today's live counters as a virtual entry
   const now = new Date();
@@ -97,6 +109,25 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
 
   const [range, setRange] = React.useState<'7' | '30' | 'all'>('7');
   const [profileFilter, setProfileFilter] = React.useState<string>('all');
+
+  // Forza il re-render quando cambiano i contatori live
+  React.useEffect(() => {
+    setRefreshKey(prev => prev + 1);
+  }, [currentActive, currentBreak, currentElapsed, currentPoms]);
+
+  // Aggiornamento forzato ogni 500ms quando il timer è in esecuzione
+  React.useEffect(() => {
+    let interval: number | null = null;
+    if (currentActive > 0 || currentBreak > 0) {
+      interval = window.setInterval(() => {
+        setRefreshKey(prev => prev + 1);
+      }, 500); // Aggiorna ogni 500ms per assicurarsi che i contatori si aggiornino ogni secondo
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [currentActive, currentBreak]);
+
   const headingClass = theme === 'gold' ? 'text-amber-700' : 'text-sky-300';
   const rowText = theme === 'gold' ? 'text-gray-800' : 'text-gray-200';
   const cardClass = theme === 'gold' ? 'bg-white/70 border-gray-300' : 'bg-black/30 border-gray-700';
@@ -108,6 +139,40 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
       return raw ? (JSON.parse(raw) as SessionRecord[]) : [];
     } catch { return []; }
   }, []);
+
+  // Compute per-day totals from sessions and merge today's live counters
+  const byDay: Record<string, { active: number; brk: number; poms: number }> = {};
+  sessions.forEach((s) => {
+    const d = byDay[s.dateKey] || { active: 0, brk: 0, poms: 0 };
+    d.active += s.active || 0;
+    d.brk += s.break || 0;
+    d.poms += s.pomodoros || 0;
+    byDay[s.dateKey] = d;
+  });
+  
+  // Per oggi, combina i valori salvati con i contatori live per la visualizzazione
+  const todayTotals = byDay[todayKey] || { active: 0, brk: 0, poms: 0 };
+  const diaryEntry = entries[todayKey];
+  
+  if (diaryEntry && diaryEntry._baseActive !== undefined) {
+    // Calcola i delta dai contatori live (solo per la visualizzazione)
+    const deltaActive = Math.max(0, currentActive - (diaryEntry._baseActive || 0));
+    const deltaBreak = Math.max(0, currentBreak - (diaryEntry._baseBreak || 0));
+    const deltaPoms = Math.max(0, currentPoms - (diaryEntry._basePoms || 0));
+    
+    byDay[todayKey] = {
+      active: todayTotals.active + (diaryEntry.active || 0) + deltaActive,
+      brk: todayTotals.brk + (diaryEntry.brk || 0) + deltaBreak,
+      poms: todayTotals.poms + (diaryEntry.poms || 0) + deltaPoms,
+    };
+  } else {
+    // Se non c'è ancora un entry nel Diario, usa i contatori live
+    byDay[todayKey] = {
+      active: todayTotals.active + Math.max(0, currentActive),
+      brk: todayTotals.brk + Math.max(0, currentBreak),
+      poms: todayTotals.poms + Math.max(0, currentPoms || 0),
+    };
+  }
   const allProfiles = useMemo<string[]>(() => Array.from(new Set(sessions.map(s => s.profile))).sort(), [sessions]);
   const sessionsInRange = sessions.filter((s) => {
     if (range === 'all') return true;
@@ -123,6 +188,26 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
     acc.poms += s.pomodoros || 0;
     return acc;
   }, { active: 0, brk: 0, poms: 0 });
+  // Add today's live counters to totals view, respecting profile filter
+  const shouldAddLive = profileFilter === 'all' || (currentProfile && profileFilter === currentProfile);
+  if (shouldAddLive) {
+    const diaryEntry = entries[todayKey];
+    if (diaryEntry && diaryEntry._baseActive !== undefined) {
+      // Combina i valori salvati con i delta live per la visualizzazione
+      const deltaActive = Math.max(0, currentActive - (diaryEntry._baseActive || 0));
+      const deltaBreak = Math.max(0, currentBreak - (diaryEntry._baseBreak || 0));
+      const deltaPoms = Math.max(0, currentPoms - (diaryEntry._basePoms || 0));
+      
+      totals.active += (diaryEntry.active || 0) + deltaActive;
+      totals.brk += (diaryEntry.brk || 0) + deltaBreak;
+      totals.poms += (diaryEntry.poms || 0) + deltaPoms;
+    } else {
+      // Se non c'è ancora un entry nel Diario, usa i contatori live
+      totals.active += Math.max(0, currentActive || 0);
+      totals.brk += Math.max(0, currentBreak || 0);
+      totals.poms += Math.max(0, currentPoms || 0);
+    }
+  }
   const totalOverall = totals.active + totals.brk;
   // const avgActive = keys.length ? Math.floor(totals.active / keys.length) : 0;
   // const avgPoms = keys.length ? Math.floor(totals.poms / keys.length) : 0;
@@ -135,6 +220,24 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
     pt.poms += s.pomodoros || 0;
     profileTotals[s.profile] = pt;
   });
+  
+  // Aggiungi i valori di oggi dal Diario per il profilo corrente
+  if (shouldAddLive && currentProfile) {
+    const diaryEntry = entries[todayKey];
+    if (diaryEntry && diaryEntry.byProfile && diaryEntry.byProfile[currentProfile]) {
+      const todayProfile = diaryEntry.byProfile[currentProfile];
+      const pt = profileTotals[currentProfile] || { active: 0, brk: 0, poms: 0 };
+      // Calcola i delta live per questo profilo
+      const deltaActive = Math.max(0, currentActive - (diaryEntry._baseActive || 0));
+      const deltaBreak = Math.max(0, currentBreak - (diaryEntry._baseBreak || 0));
+      const deltaPoms = Math.max(0, currentPoms - (diaryEntry._basePoms || 0));
+      
+      pt.active += (todayProfile.active || 0) + deltaActive;
+      pt.brk += (todayProfile.brk || 0) + deltaBreak;
+      pt.poms += (todayProfile.poms || 0) + deltaPoms;
+      profileTotals[currentProfile] = pt;
+    }
+  }
   const topProfile = Object.keys(profileTotals).reduce<{ name: string; active: number } | null>((best, name) => {
     const a = profileTotals[name].active;
     if (!best || a > best.active) return { name, active: a };
@@ -197,11 +300,10 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
           {sessionsFiltered.length === 0 && (
             <div className={`text-xs ${rowText}`}>Nessuna sessione</div>
           )}
-          {sessionsFiltered.map((s, idx) => {
-            const total = s.active + s.break;
-            const started = new Date(s.startedAt);
-            const ended = new Date(s.endedAt);
-            const hhmm = (d: Date) => `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+                     {sessionsFiltered.map((s, idx) => {
+             const total = s.active + s.break;
+             const ended = new Date(s.endedAt);
+             const hhmm = `${ended.getHours().toString().padStart(2,'0')}:${ended.getMinutes().toString().padStart(2,'0')}`;
             const zebra = theme === 'gold'
               ? (idx % 2 === 0 ? 'bg-white/80' : 'bg-white/60')
               : (idx % 2 === 0 ? 'bg-black/40' : 'bg-black/25');
@@ -226,7 +328,7 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
                   </div>
                   <div>
                     <div className="sm:hidden opacity-70">Data/stop</div>
-                    <div className="font-mono text-sm">{s.dateKey} {hhmm(ended)}</div>
+                                         <div className="font-mono text-sm">{s.dateKey} {hhmm}</div>
                   </div>
                 </div>
               </div>

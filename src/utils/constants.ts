@@ -7,6 +7,7 @@ export const STORAGE = {
   CURRENT_PROFILE: 'tempo_current_profile',
   PROFILES: 'tempo_profiles',
   SESSIONS: 'tempo_sessions',
+  SOUND: 'tempo_sound',
 } as const;
 
 export type ThemeName = 'blue' | 'gold' | 'neo' | 'cosmic' | 'glass' | 'chrono';

@@ -18,6 +18,7 @@ const Timer: React.FC<TimerProps> = ({ duration, isRunning, onTimerEnd, theme = 
   const targetTsRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
   const endedRef = useRef<boolean>(false);
+  const fallbackTimeoutRef = useRef<number | null>(null);
 
   // Reset when duration or session changes
   useEffect(() => {
@@ -33,6 +34,10 @@ const Timer: React.FC<TimerProps> = ({ duration, isRunning, onTimerEnd, theme = 
       rafRef.current = null;
     }
     targetTsRef.current = null;
+    if (fallbackTimeoutRef.current !== null) {
+      clearTimeout(fallbackTimeoutRef.current);
+      fallbackTimeoutRef.current = null;
+    }
   };
 
   const tick = (now: number) => {
@@ -57,11 +62,69 @@ const Timer: React.FC<TimerProps> = ({ duration, isRunning, onTimerEnd, theme = 
     if (isRunning) {
       // Start loop
       rafRef.current = requestAnimationFrame(tick);
+      // Fallback timeout to fire end even if tab is backgrounded
+      if (fallbackTimeoutRef.current !== null) {
+        clearTimeout(fallbackTimeoutRef.current);
+        fallbackTimeoutRef.current = null;
+      }
+      const delayMs = Math.max(0, remainingMsRef.current);
+      fallbackTimeoutRef.current = window.setTimeout(() => {
+        // compute with performance.now to avoid Date skew
+        const now = performance.now();
+        if (targetTsRef.current == null) {
+          targetTsRef.current = now + remainingMsRef.current;
+        }
+        const msLeft = Math.max(0, targetTsRef.current - now);
+        remainingMsRef.current = msLeft;
+        const secs = Math.ceil(msLeft / 1000);
+        setDisplaySeconds((prev) => (prev !== secs ? secs : prev));
+        if (msLeft <= 0 && !endedRef.current) {
+          endedRef.current = true;
+          stopLoop();
+          onTimerEnd();
+        }
+      }, delayMs + 5);
     } else {
       // Pause
       stopLoop();
     }
     return () => stopLoop();
+  }, [isRunning]);
+
+  // Safety: if duration/session changes while running, ensure a loop is scheduled
+  useEffect(() => {
+    if (isRunning && rafRef.current === null) {
+      rafRef.current = requestAnimationFrame(tick);
+    }
+    return () => {};
+  }, [isRunning, duration, sessionId]);
+
+  // Ensure progress catches up when tab becomes visible again
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (!isRunning) return;
+      if (document.visibilityState === 'visible') {
+        const now = performance.now();
+        if (targetTsRef.current == null) {
+          targetTsRef.current = now + remainingMsRef.current;
+        }
+        const msLeft = Math.max(0, targetTsRef.current - now);
+        remainingMsRef.current = msLeft;
+        const secs = Math.ceil(msLeft / 1000);
+        setDisplaySeconds((prev) => (prev !== secs ? secs : prev));
+        if (msLeft <= 0 && !endedRef.current) {
+          endedRef.current = true;
+          stopLoop();
+          onTimerEnd();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
+    };
   }, [isRunning]);
 
   const formatTime = (time: number) => {

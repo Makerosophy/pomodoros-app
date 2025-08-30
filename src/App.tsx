@@ -5,7 +5,7 @@ import WorkdayProgress from './components/WorkdayProgress';
 import WatchFace from './components/WatchFace';
 import Diary from './components/Diary';
 import SchedulePreview from './components/SchedulePreview';
-import { playChime, playFinalChime, resumeAudioContext, announcePhase, announceEnd } from './utils/audio';
+import { resumeAudioContext, announcePhase, announceEnd, playChimeByName, playFinalChimeByName, type SoundName } from './utils/audio';
 import { vibrateShort, vibrateSuccess, vibrateWarning } from './utils/haptics';
 import { STORAGE, THEMES, type ThemeName } from './utils/constants';
 import { nextMidnightDelayMs } from './utils/dates';
@@ -38,6 +38,13 @@ function App() {
   const [hapticsEnabled, setHapticsEnabled] = useState<boolean>(true);
   const [scheduleType, setScheduleType] = useState<'standard' | 'shortOnly' | 'longOnly'>('standard');
   const [showDiary, setShowDiary] = useState<boolean>(false);
+  const [sound, setSound] = useState<SoundName>(() => {
+    try {
+      const s = localStorage.getItem(STORAGE.SOUND) as SoundName | null;
+      if (s === 'beep' || s === 'bell' || s === 'digital' || s === 'chime') return s;
+    } catch {}
+    return 'chime';
+  });
   const [currentProfile, setCurrentProfile] = useState<string>(() => {
     try {
       return localStorage.getItem(STORAGE.CURRENT_PROFILE) || 'Default';
@@ -103,6 +110,37 @@ function App() {
         _basePoms: pomodorosCompleted,
       };
       localStorage.setItem(STORAGE.DIARY, JSON.stringify(store));
+    } catch {}
+  };
+
+  // Aggiorna solo i pomodori completati senza toccare i contatori di tempo
+  const updatePomodorosOnly = () => {
+    try {
+      const now = new Date();
+      const key = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2,'0')}-${now.getDate().toString().padStart(2,'0')}`;
+      const raw = localStorage.getItem(STORAGE.DIARY);
+      const store = raw ? JSON.parse(raw) : {};
+      const prev = store[key] || { active: 0, brk: 0, short: 0, long: 0, poms: 0, elapsed: 0, byProfile: {} };
+      const profileName = localStorage.getItem(STORAGE.CURRENT_PROFILE) || 'Default';
+      
+      // Aggiorna solo i pomodori, non i contatori di tempo
+      const dPoms = Math.max(0, pomodorosCompleted - (prev._basePoms || 0));
+      const nextByProfile = { ...(prev.byProfile || {}) } as Record<string, { active: 0, brk: 0, poms?: number }>;
+      const pp = nextByProfile[profileName] || { active: 0, brk: 0, poms: 0 };
+      pp.poms = (pp.poms || 0) + dPoms;
+      nextByProfile[profileName] = pp;
+      
+      store[key] = {
+        ...prev,
+        poms: (prev.poms || 0) + dPoms,
+        byProfile: nextByProfile,
+        _basePoms: pomodorosCompleted,
+        ts: Date.now(),
+      };
+      localStorage.setItem(STORAGE.DIARY, JSON.stringify(store));
+      
+      // Forza il refresh del componente Diary per mostrare i pomodori aggiornati
+      window.dispatchEvent(new CustomEvent('diary-updated'));
     } catch {}
   };
 
@@ -216,8 +254,22 @@ function App() {
     elapsedWorkdayTime,
   ]);
 
+  // Forza l'aggiornamento del componente Diary ogni secondo quando il timer è in esecuzione
+  useEffect(() => {
+    let interval: number | null = null;
+    if (isTimerRunning) {
+      interval = window.setInterval(() => {
+        // Forza il refresh del componente Diary per aggiornare i contatori in tempo reale
+        window.dispatchEvent(new CustomEvent('diary-updated'));
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isTimerRunning]);
+
   const handleTimerEnd = useCallback(() => {
-    playChime();
+    playChimeByName(sound);
     setIsTimerRunning(false);
 
     // Determine stop condition
@@ -225,7 +277,7 @@ function App() {
     const cyclesDone = runMode === 'cycles' && currentTimerType === 'pomodoro' && (pomodorosCompleted + 1) >= targetCycles;
     if (workdayDone || cyclesDone) {
       // Finalize session: play distinct final chime and reset to defaults
-      playFinalChime();
+      playFinalChimeByName(sound);
       announceEnd();
       writeDiarySnapshot();
       writeSessionRecord();
@@ -252,6 +304,10 @@ function App() {
       const nextCompleted = pomodorosCompleted + 1;
       setPomodorosCompleted(nextCompleted);
       setCumulativePomodoros((c) => c + 1);
+      
+      // Aggiorna immediatamente solo i pomodori nel Diario quando termina un pomodoro
+      updatePomodorosOnly();
+      
       if (scheduleType === 'shortOnly') {
         setCurrentTimerType('shortBreak');
         announcePhase('shortBreak');
@@ -274,7 +330,7 @@ function App() {
     }
     // Defer auto-start to a dedicated effect to avoid race conditions
     setPendingAutoStart(true);
-  }, [currentTimerType, elapsedWorkdayTime, workdayDuration, pomodorosCompleted, longEvery, runMode, targetCycles]);
+  }, [currentTimerType, elapsedWorkdayTime, workdayDuration, pomodorosCompleted, longEvery, runMode, targetCycles, sound]);
 
   const handleReset = () => {
     writeDiarySnapshot();
@@ -296,32 +352,33 @@ function App() {
     let interval: number | null = null;
     if (isTimerRunning) {
       interval = window.setInterval(() => {
+        // Aggiorna il tempo trascorso
         setElapsedWorkdayTime((prev) => {
           const next = prev + 1;
           if (next >= workdayDuration) {
-            if (interval) clearInterval(interval);
             setIsTimerRunning(false);
             alert('Workday completed!');
           }
-          // Update cumulative counters based on current phase
-          if (currentTimerType === 'pomodoro') {
-            setCumulativeActiveSec((a) => a + 1);
-          } else {
-            setCumulativeBreakSec((b) => b + 1);
-            if (currentTimerType === 'shortBreak') {
-              setCumulativeShortBreakSec((s) => s + 1);
-            } else if (currentTimerType === 'longBreak') {
-              setCumulativeLongBreakSec((l) => l + 1);
-            }
-          }
           return next;
         });
+        
+        // Aggiorna i contatori cumulativi (fuori dal setState per evitare race conditions)
+        if (currentTimerType === 'pomodoro') {
+          setCumulativeActiveSec((a) => a + 1);
+        } else {
+          setCumulativeBreakSec((b) => b + 1);
+          if (currentTimerType === 'shortBreak') {
+            setCumulativeShortBreakSec((s) => s + 1);
+          } else if (currentTimerType === 'longBreak') {
+            setCumulativeLongBreakSec((l) => l + 1);
+          }
+        }
       }, 1000);
     }
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isTimerRunning, workdayDuration, currentTimerType]);
+  }, [isTimerRunning]); // Solo isTimerRunning come dipendenza per mantenere il setInterval stabile
 
   // Load saved theme at startup
   useEffect(() => {
@@ -343,6 +400,10 @@ function App() {
       // ignore storage errors
     }
   }, [theme]);
+  // Persist sound selection
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE.SOUND, sound); } catch {}
+  }, [sound]);
 
   // Load haptics preference
   useEffect(() => {
@@ -454,9 +515,11 @@ function App() {
     return () => clearTimeout(t);
   }, [cumulativeActiveSec, cumulativeBreakSec, elapsedWorkdayTime]);
 
-  // Auto-start the next segment after type changes
+  // Auto-start the next segment after type changes and ensure session reset
   useEffect(() => {
     if (pendingAutoStart) {
+      // bump session to ensure Timer resets target timestamp for new segment
+      setSessionId((s) => s + 1);
       setIsTimerRunning(true);
       setPendingAutoStart(false);
     }
@@ -469,119 +532,122 @@ function App() {
 
   return (
     <WatchFace theme={theme} onThemeChange={setTheme}>
-      {showSettings ? (
-        <div className="h-full overflow-auto pr-1">
-          <TimerSettings
-            pomodoroDuration={pomodoroDuration}
-            shortBreakDuration={shortBreakDuration}
-            longBreakDuration={longBreakDuration}
-            workdayDuration={workdayDuration}
-            longBreakEvery={longEvery}
-            mode={runMode}
-            targetCycles={targetCycles}
+      {/* Settings view */}
+      <div className={`${showSettings ? '' : 'hidden'} h-full overflow-auto pr-1`}>
+        <TimerSettings
+          pomodoroDuration={pomodoroDuration}
+          shortBreakDuration={shortBreakDuration}
+          longBreakDuration={longBreakDuration}
+          workdayDuration={workdayDuration}
+          longBreakEvery={longEvery}
+          mode={runMode}
+          targetCycles={targetCycles}
+          theme={theme}
+          hapticsEnabled={hapticsEnabled}
+          onToggleHaptics={setHapticsEnabled}
+          scheduleType={scheduleType}
+          onSettingsChange={handleSettingsChange}
+          onProfileApplied={(name) => switchCurrentProfile(name)}
+          onProfileSaved={(name) => switchCurrentProfile(name)}
+          sound={sound}
+          onSoundChange={(s)=> setSound && setSound(s)}
+        />
+        <div className="mt-3 text-right">
+          <button
+            className={`${theme==='gold' ? 'bg-amber-500 hover:bg-amber-600 text-black' : 'bg-gray-700 hover:bg-gray-600 text-white'} text-xs font-semibold py-1.5 px-3 rounded`}
+            onClick={() => setShowSettings(false)}
+          >Chiudi</button>
+        </div>
+      </div>
+
+      {/* Diary view */}
+      <div className={`${showDiary ? '' : 'hidden'} flex flex-col h-full`}>
+        <div className="mb-2 text-right">
+          <button
+            className={`${theme==='gold' ? 'bg-amber-400 hover:bg-amber-500 text-black' : 'bg-purple-600 hover:bg-purple-700 text-white'} text-xs font-semibold py-1.5 px-3 rounded`}
+            onClick={() => { try { writeDiarySnapshot(); } catch {} setShowDiary(false); }}
+          >Chiudi Diario</button>
+        </div>
+        <div className="flex-1 min-h-0">
+          <Diary theme={theme} currentActive={cumulativeActiveSec} currentBreak={cumulativeBreakSec} currentElapsed={elapsedWorkdayTime} currentPoms={cumulativePomodoros} currentProfile={currentProfile} />
+        </div>
+      </div>
+
+      {/* Main view with Timer (kept mounted; hidden when settings/diary open) */}
+      <div className={`${showSettings || showDiary ? 'hidden' : ''} flex flex-col h-full`}>
+        <div className="text-center mb-2">
+          <p className={`text-xl font-bold ${accentTextClass}`}>Attività in corso</p>
+          <p className={`text-xs mt-1 ${sectionTextClass}`}><span className="font-semibold">{currentProfile}</span></p>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <Timer
+            duration={getCurrentDuration()}
+            isRunning={isTimerRunning}
+            onTimerEnd={handleTimerEnd}
             theme={theme}
-            hapticsEnabled={hapticsEnabled}
-            onToggleHaptics={setHapticsEnabled}
-            scheduleType={scheduleType}
-            onSettingsChange={handleSettingsChange}
-            onProfileApplied={(name) => switchCurrentProfile(name)}
-            onProfileSaved={(name) => switchCurrentProfile(name)}
+            accentHex={palette.accent}
+            glowHex={palette.glow ?? palette.accent}
+            sessionId={sessionId}
           />
-          <div className="mt-3 text-right">
-            <button
-              className={`${theme==='gold' ? 'bg-amber-500 hover:bg-amber-600 text-black' : 'bg-gray-700 hover:bg-gray-600 text-white'} text-xs font-semibold py-1.5 px-3 rounded`}
-              onClick={() => setShowSettings(false)}
-            >Chiudi</button>
-          </div>
         </div>
-      ) : showDiary ? (
-        <div className="flex flex-col h-full">
-          <div className="mb-2 text-right">
+        <div className="mt-auto">
+          <div className="grid grid-flow-col auto-cols-fr gap-2">
+            {!isTimerRunning && !hasEverStarted && (
+              <button
+                className={`${theme==='gold' ? 'bg-amber-500 hover:bg-amber-600 text-black' : 'bg-blue-600 hover:bg-blue-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
+                onClick={async () => { await resumeAudioContext(); startWorkday(); }}
+              >Avvia</button>
+            )}
+            {isTimerRunning && (
+              <button
+                className={`${theme==='gold' ? 'bg-amber-700 hover:bg-amber-800 text-black' : 'bg-red-600 hover:bg-red-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
+                onClick={() => { if (hapticsEnabled) vibrateWarning(); setIsTimerRunning(false); }}
+              >Pausa</button>
+            )}
+            {!isTimerRunning && hasEverStarted && (
+              <button
+                className={`${theme==='gold' ? 'bg-amber-500 hover:bg-amber-600 text-black' : 'bg-blue-600 hover:bg-blue-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
+                onClick={() => { if (hapticsEnabled) vibrateShort(); resumeTimer(); }}
+              >Riprendi</button>
+            )}
             <button
-              className={`${theme==='gold' ? 'bg-amber-400 hover:bg-amber-500 text-black' : 'bg-purple-600 hover:bg-purple-700 text-white'} text-xs font-semibold py-1.5 px-3 rounded`}
-              onClick={() => setShowDiary(false)}
-            >Chiudi Diario</button>
+              className={`${theme==='gold' ? 'bg-yellow-700 hover:bg-yellow-800 text-black' : 'bg-gray-600 hover:bg-gray-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
+              onClick={() => { if (hapticsEnabled) vibrateWarning(); handleReset(); }}
+            >Reset</button>
+            <button
+              className={`${theme==='gold' ? 'bg-amber-400 hover:bg-amber-500 text-black' : 'bg-purple-600 hover:bg-purple-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
+              onClick={() => { if (hapticsEnabled) vibrateShort(); setShowSettings(true); }}
+            >Set</button>
+            <button
+              className={`${theme==='gold' ? 'bg-amber-300 hover:bg-amber-400 text-black' : 'bg-teal-600 hover:bg-teal-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
+              onClick={() => { try { writeDiarySnapshot(); } catch {} setShowDiary(true); }}
+            >Diario</button>
           </div>
-          <div className="flex-1 min-h-0">
-            <Diary theme={theme} currentActive={cumulativeActiveSec} currentBreak={cumulativeBreakSec} currentElapsed={elapsedWorkdayTime} currentPoms={cumulativePomodoros} currentProfile={currentProfile} />
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-col h-full">
-          <div className="text-center mb-2">
-            <p className={`text-xl font-bold ${accentTextClass}`}>Attività in corso</p>
-            <p className={`text-xs mt-1 ${sectionTextClass}`}><span className="font-semibold">{currentProfile}</span></p>
-          </div>
-          <div className="flex-1 flex items-center justify-center">
-            <Timer
-              duration={getCurrentDuration()}
-              isRunning={isTimerRunning}
-              onTimerEnd={handleTimerEnd}
+          <div className="mt-3 grid grid-cols-1 gap-3 text-xs">
+            <WorkdayProgress
+              totalWorkdayDuration={workdayDuration}
+              elapsedWorkdayTime={elapsedWorkdayTime}
+              mode={runMode}
+              targetCycles={targetCycles}
+              pomodorosCompleted={pomodorosCompleted}
               theme={theme}
-              accentHex={palette.accent}
-              glowHex={palette.glow ?? palette.accent}
-              sessionId={sessionId}
+              cumulativeActiveSec={cumulativeActiveSec}
+              cumulativeBreakSec={cumulativeBreakSec}
+            />
+            <SchedulePreview
+              currentType={currentTimerType}
+              pomodoroSeconds={pomodoroDuration}
+              shortBreakSeconds={shortBreakDuration}
+              longBreakSeconds={longBreakDuration}
+              longEvery={longEvery}
+              remainingPomodoros={runMode==='cycles' ? (targetCycles - pomodorosCompleted) : null}
+              totalSecondsLeft={runMode==='workday' ? (workdayDuration - elapsedWorkdayTime) : null}
+              theme={theme}
+              scheduleType={scheduleType}
             />
           </div>
-          <div className="mt-auto">
-            <div className="grid grid-flow-col auto-cols-fr gap-2">
-              {!isTimerRunning && !hasEverStarted && (
-                <button
-                  className={`${theme==='gold' ? 'bg-amber-500 hover:bg-amber-600 text-black' : 'bg-blue-600 hover:bg-blue-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
-                  onClick={async () => { await resumeAudioContext(); startWorkday(); }}
-                >Avvia</button>
-              )}
-              {isTimerRunning && (
-                <button
-                  className={`${theme==='gold' ? 'bg-amber-700 hover:bg-amber-800 text-black' : 'bg-red-600 hover:bg-red-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
-                  onClick={() => { if (hapticsEnabled) vibrateWarning(); setIsTimerRunning(false); }}
-                >Pausa</button>
-              )}
-              {!isTimerRunning && hasEverStarted && (
-                <button
-                  className={`${theme==='gold' ? 'bg-amber-500 hover:bg-amber-600 text-black' : 'bg-blue-600 hover:bg-blue-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
-                  onClick={() => { if (hapticsEnabled) vibrateShort(); resumeTimer(); }}
-                >Riprendi</button>
-              )}
-              <button
-                className={`${theme==='gold' ? 'bg-yellow-700 hover:bg-yellow-800 text-black' : 'bg-gray-600 hover:bg-gray-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
-                onClick={() => { if (hapticsEnabled) vibrateWarning(); handleReset(); }}
-              >Reset</button>
-              <button
-                className={`${theme==='gold' ? 'bg-amber-400 hover:bg-amber-500 text-black' : 'bg-purple-600 hover:bg-purple-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
-                onClick={() => { if (hapticsEnabled) vibrateShort(); setShowSettings(true); }}
-              >Set</button>
-              <button
-                className={`${theme==='gold' ? 'bg-amber-300 hover:bg-amber-400 text-black' : 'bg-teal-600 hover:bg-teal-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
-                onClick={() => setShowDiary(true)}
-              >Diario</button>
-            </div>
-            <div className="mt-3 grid grid-cols-1 gap-3 text-xs">
-              <WorkdayProgress
-                totalWorkdayDuration={workdayDuration}
-                elapsedWorkdayTime={elapsedWorkdayTime}
-                mode={runMode}
-                targetCycles={targetCycles}
-                pomodorosCompleted={pomodorosCompleted}
-                theme={theme}
-                cumulativeActiveSec={cumulativeActiveSec}
-                cumulativeBreakSec={cumulativeBreakSec}
-              />
-              <SchedulePreview
-                currentType={currentTimerType}
-                pomodoroSeconds={pomodoroDuration}
-                shortBreakSeconds={shortBreakDuration}
-                longBreakSeconds={longBreakDuration}
-                longEvery={longEvery}
-                remainingPomodoros={runMode==='cycles' ? (targetCycles - pomodorosCompleted) : null}
-                totalSecondsLeft={runMode==='workday' ? (workdayDuration - elapsedWorkdayTime) : null}
-                theme={theme}
-                scheduleType={scheduleType}
-              />
-            </div>
-          </div>
         </div>
-      )}
+      </div>
     </WatchFace>
   );
 }

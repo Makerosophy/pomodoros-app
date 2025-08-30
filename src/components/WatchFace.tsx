@@ -58,7 +58,7 @@ const WatchFace: React.FC<WatchFaceProps> = ({ theme, onThemeChange, children })
             )}
           </div>
           {/* Inner display */}
-          <div className={`m-3 rounded-2xl border bg-gradient-to-br ${innerClass} h-[calc(100%-44px)] p-4 overflow-hidden`}> 
+          <div className={`m-3 rounded-2xl border bg-gradient-to-br ${innerClass} h-[calc(100%-44px)] p-4 overflow-auto`}> 
             {children}
           </div>
         </div>

@@ -120,6 +120,57 @@ export const playFinalChime = async (): Promise<void> => {
   createBell(2093, now + 0.36, 0.40, 0.18);
 };
 
+export type SoundName = 'chime' | 'beep' | 'bell' | 'digital';
+
+// A short, synthetic digital blip sequence
+const playDigital = async (): Promise<void> => {
+  const ctx = getAudioContext();
+  if (ctx.state === 'suspended') {
+    try { await ctx.resume(); } catch {}
+  }
+  const now = ctx.currentTime;
+  const mk = (f: number, t: number, d = 0.12, v = 0.25) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(f, now + t);
+    gain.gain.setValueAtTime(0.0001, now + t);
+    gain.gain.exponentialRampToValueAtTime(v, now + t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + t + d);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(now + t); osc.stop(now + t + d + 0.02);
+  };
+  mk(880, 0.00); // A5
+  mk(1320, 0.10); // E6
+};
+
+export const playChimeByName = async (name: SoundName): Promise<void> => {
+  switch (name) {
+    case 'beep':
+      return playBeep(880, 0.18, 0.3);
+    case 'bell':
+      return playFinalChime();
+    case 'digital':
+      return playDigital();
+    case 'chime':
+    default:
+      return playChime();
+  }
+};
+
+export const playFinalChimeByName = async (name: SoundName): Promise<void> => {
+  // Final chime variants can reuse main selection but slightly richer for non-beep
+  switch (name) {
+    case 'beep':
+      return playBeep(660, 0.2, 0.35);
+    case 'digital':
+      return playDigital();
+    case 'bell':
+    case 'chime':
+    default:
+      return playFinalChime();
+  }
+};
 // -------- Speech synthesis helpers --------
 type PhaseType = 'pomodoro' | 'shortBreak' | 'longBreak';
 
