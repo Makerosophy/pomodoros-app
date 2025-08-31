@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { resumeAudioContext, playChimeByName, type SoundName } from '../utils/audio';
+import { VOICE_OPTIONS, type VoiceType } from '../utils/constants';
 
 interface TimerSettingsProps {
   pomodoroDuration: number;
@@ -55,6 +56,11 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
   const [runMode, setRunMode] = useState<'workday' | 'cycles'>(mode);
   const [cycles, setCycles] = useState<number>(targetCycles);
   const [schedType, setSchedType] = useState<'standard' | 'shortOnly' | 'longOnly'>(scheduleType);
+  
+  // Voice settings
+  const [voiceType, setVoiceType] = useState<VoiceType>('system');
+  const [voiceVolume, setVoiceVolume] = useState<number>(0.8);
+  
   const [profiles, setProfiles] = useState<Record<string, {
     pomodoro: number;
     shortBreak: number;
@@ -69,6 +75,49 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
   const [selectedProfile, setSelectedProfile] = useState<string>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
+  // Load voice settings from localStorage
+  useEffect(() => {
+    try {
+      const savedVoice = localStorage.getItem('tempo_voice') as VoiceType;
+      const savedVolume = localStorage.getItem('tempo_voice_volume');
+      
+      if (savedVoice && Object.keys(VOICE_OPTIONS).includes(savedVoice)) {
+        setVoiceType(savedVoice);
+      }
+      if (savedVolume) {
+        const volume = parseFloat(savedVolume);
+        if (!isNaN(volume) && volume >= 0.1 && volume <= 1.0) {
+          setVoiceVolume(volume);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Save voice settings to localStorage
+  const saveVoiceSettings = (type: VoiceType, volume: number) => {
+    try {
+      localStorage.setItem('tempo_voice', type);
+      localStorage.setItem('tempo_voice_volume', volume.toString());
+    } catch {
+      // ignore
+    }
+  };
+
+  // Handle voice change
+  const handleVoiceChange = (newVoice: VoiceType) => {
+    setVoiceType(newVoice);
+    saveVoiceSettings(newVoice, voiceVolume);
+  };
+
+  // Handle volume change
+  const handleVolumeChange = (newVolume: number) => {
+    const clampedVolume = Math.max(0.1, Math.min(1.0, newVolume));
+    setVoiceVolume(clampedVolume);
+    saveVoiceSettings(voiceType, clampedVolume);
+  };
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem('tempo_profiles');
@@ -81,7 +130,7 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
     }
   }, []);
 
-  // Traccia le modifiche e salva automaticamente
+  // Track changes and save automatically
   useEffect(() => {
     if (selectedProfile && profiles[selectedProfile]) {
       const currentProfile = profiles[selectedProfile];
@@ -97,7 +146,7 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
       
       setHasUnsavedChanges(hasChanges);
       
-      // Salva automaticamente dopo 2 secondi di inattività
+      // Save automatically after 2 seconds of inactivity
       if (hasChanges) {
         const timeoutId = setTimeout(autoSaveProfile, 2000);
         return () => clearTimeout(timeoutId);
@@ -114,7 +163,7 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
     }
   };
 
-  // Funzione per salvare automaticamente le modifiche al profilo corrente
+  // Function to automatically save changes to the current profile
   const autoSaveProfile = () => {
     if (selectedProfile && profiles[selectedProfile] && hasUnsavedChanges) {
       const updatedProfile = {
@@ -132,7 +181,7 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
       persistProfiles(updatedProfiles);
       setHasUnsavedChanges(false);
       
-      // Notifica che il profilo è stato aggiornato
+      // Notify that the profile has been updated
       if (onProfileSaved) onProfileSaved(selectedProfile);
     }
   };
@@ -166,7 +215,7 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
     setRunMode(p.mode);
     setCycles(p.targetCycles);
     setSchedType(p.scheduleType);
-    setSelectedProfile(name); // Imposta il profilo selezionato
+    setSelectedProfile(name); // Set the selected profile
     if (onProfileApplied) onProfileApplied(name);
   };
 
@@ -179,7 +228,7 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
   const renameProfile = (name: string) => {
     const p = profiles[name];
     if (!p) return;
-    const nextName = prompt('Nuovo nome profilo', name)?.trim();
+    const nextName = prompt('New profile name', name)?.trim();
     if (!nextName || nextName === name) return;
     const next = { ...profiles } as Record<string, typeof p>;
     delete next[name];
@@ -197,7 +246,7 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
   const segInactive = isLight ? 'bg-gray-200 text-gray-900' : 'bg-gray-600 text-gray-100';
   const smallBtn = isLight ? 'bg-gray-200 text-gray-900 hover:bg-gray-300' : 'bg-gray-600 text-gray-100 hover:bg-gray-500';
   const cardClass = isLight ? 'bg-white/70 border-gray-300' : 'bg-black/30 border-gray-700';
-  const soundOptions: SoundName[] = ['chime','beep','bell','digital'];
+
 
   // removed unused changeBy in favor of press-and-hold controls
 
@@ -377,7 +426,7 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
   };
 
   const handleChange = () => {
-    // Applica le impostazioni
+    // Apply the settings
     onSettingsChange({
       pomodoro: pomodoro,
       shortBreak: shortBreak,
@@ -389,7 +438,7 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
       scheduleType: schedType,
     });
     
-    // Forza il salvataggio immediato se ci sono modifiche non salvate
+    // Force immediate save if there are unsaved changes
     if (hasUnsavedChanges) {
       autoSaveProfile();
     }
@@ -399,31 +448,31 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
     <div className="grid [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))] gap-3 mb-4">
       <div className="col-span-full">
         <div className={`border rounded p-3 ${cardClass}`}>
-          <span className={`block text-sm font-medium mb-2 ${labelTextClass}`}>Modalità</span>
+          <span className={`block text-sm font-medium mb-2 ${labelTextClass}`}>Mode</span>
           <div className="inline-grid grid-cols-2 rounded-md overflow-hidden focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-400">
             <button
               className={`px-3 py-1 text-sm ${runMode==='workday' ? segActive : segInactive}`}
               onClick={() => setRunMode('workday')}
-            >Giornata</button>
+            >Workday</button>
             <button
               className={`px-3 py-1 text-sm ${runMode==='cycles' ? segActive : segInactive}`}
               onClick={() => setRunMode('cycles')}
-            >Cicli</button>
+            >Cycles</button>
           </div>
-          <p className={`mt-2 text-xs ${helpTextClass}`}>{runMode==='workday' ? 'Imposta durata totale della giornata' : 'Imposta numero di cicli pomodoro'}</p>
+          <p className={`mt-2 text-xs ${helpTextClass}`}>{runMode==='workday' ? 'Set total workday duration' : 'Set number of pomodoro cycles'}</p>
         </div>
       </div>
       {Object.keys(profiles).length > 0 && (
         <div className="col-span-full">
           <div className={`border rounded p-3 ${cardClass}`}>
-            <span className={`block text-sm font-medium mb-2 ${labelTextClass}`}>Carica profilo rapido</span>
+            <span className={`block text-sm font-medium mb-2 ${labelTextClass}`}>Load Quick Profile</span>
             <div className="flex gap-2 items-center">
               <select
                 value={selectedProfile}
                 onChange={(e) => setSelectedProfile(e.target.value)}
                 className={`flex-1 rounded-md px-3 py-1.5 ${fieldClass}`}
               >
-                <option value="" disabled>Seleziona un profilo…</option>
+                <option value="" disabled>Select a profile…</option>
                 {Object.keys(profiles).sort().map((name) => (
                   <option key={name} value={name}>{name}</option>
                 ))}
@@ -431,10 +480,10 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
               <button
                 className={`${isLight ? 'bg-gray-200 text-gray-900 hover:bg-gray-300' : 'bg-gray-600 text-white hover:bg-gray-500'} text-sm font-semibold py-1.5 px-3 rounded`}
                 onClick={() => selectedProfile && applyProfileToForm(selectedProfile)}
-              >Carica</button>
+              >Load</button>
               {hasUnsavedChanges && selectedProfile && (
                 <span className={`text-xs px-2 py-1 rounded ${isLight ? 'bg-amber-100 text-amber-800' : 'bg-amber-900 text-amber-200'}`}>
-                  Modifiche non salvate
+                  Unsaved changes
                 </span>
               )}
             </div>
@@ -443,45 +492,104 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
       )}
       <div className="col-span-full">
         <div className={`border rounded p-3 ${cardClass}`}>
-          <span className={`block text-sm font-medium mb-2 ${labelTextClass}`}>Schema pause</span>
+          <span className={`block text-sm font-medium mb-2 ${labelTextClass}`}>Pause Schema</span>
           <div className="inline-grid grid-cols-3 rounded-md overflow-hidden">
             <button className={`px-3 py-1 text-sm ${schedType==='standard' ? segActive : segInactive}`} onClick={() => setSchedType('standard')}>Standard</button>
-            <button className={`px-3 py-1 text-sm ${schedType==='shortOnly' ? segActive : segInactive}`} onClick={() => setSchedType('shortOnly')}>Solo brevi</button>
-            <button className={`px-3 py-1 text-sm ${schedType==='longOnly' ? segActive : segInactive}`} onClick={() => setSchedType('longOnly')}>Solo lunghe</button>
+            <button className={`px-3 py-1 text-sm ${schedType==='shortOnly' ? segActive : segInactive}`} onClick={() => setSchedType('shortOnly')}>Short Only</button>
+            <button className={`px-3 py-1 text-sm ${schedType==='longOnly' ? segInactive : segActive}`} onClick={() => setSchedType('longOnly')}>Long Only</button>
           </div>
-          <p className={`mt-2 text-xs ${helpTextClass}`}>Scegli come distribuire le pause tra i pomodori</p>
+          <p className={`mt-2 text-xs ${helpTextClass}`}>Choose how to distribute breaks between pomodoros</p>
         </div>
       </div>
 
       <div className="col-span-full">
         <div className={`border rounded p-3 ${cardClass}`}>
-          <span className={`block text-sm font-medium mb-2 ${labelTextClass}`}>Suono timer</span>
+          <span className={`block text-sm font-medium mb-2 ${labelTextClass}`}>Timer Sound</span>
           <div className="flex items-center gap-2">
             <select
               value={sound}
               onChange={(e) => onSoundChange && onSoundChange(e.target.value as SoundName)}
               className={`flex-1 rounded-md px-3 py-1.5 ${fieldClass}`}
             >
-              {soundOptions.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
+              <option value="beep">Beep</option>
+              <option value="bell">Bell</option>
+              <option value="digital">Digital</option>
+              <option value="chime">Chime</option>
             </select>
             <button
               className={`${isLight ? 'bg-gray-200 text-gray-900 hover:bg-gray-300' : 'bg-gray-600 text-white hover:bg-gray-500'} text-sm font-semibold py-1.5 px-3 rounded`}
               onClick={async () => { await resumeAudioContext(); if (onSoundChange) { /* preview current */ } await playChimeByName(sound); }}
-            >Prova</button>
+            >Preview</button>
           </div>
-          <p className={`mt-2 text-xs ${helpTextClass}`}>Seleziona un suono. La scelta viene salvata sul dispositivo.</p>
+          <p className={`mt-2 text-xs ${helpTextClass}`}>Select a sound. The choice is saved on the device.</p>
+        </div>
+      </div>
+
+      {/* Voice settings section */}
+      <div className="col-span-full">
+        <div className={`border rounded p-3 ${cardClass}`}>
+          <span className={`block text-sm font-medium mb-2 ${labelTextClass}`}>Voice Announcements</span>
+          
+          {/* Voice type selection */}
+          <div className="mb-3">
+            <label className={`block text-xs ${helpTextClass} mb-1`}>Voice Type</label>
+            <select
+              value={voiceType}
+              onChange={(e) => handleVoiceChange(e.target.value as VoiceType)}
+              className={`w-full rounded-md px-3 py-1.5 ${fieldClass}`}
+            >
+              {Object.entries(VOICE_OPTIONS).map(([key, option]) => (
+                <option key={key} value={key}>{option.label}</option>
+              ))}
+            </select>
+            <p className={`mt-1 text-xs ${helpTextClass}`}>Choose the voice for "Start", "Short break", etc. announcements</p>
+          </div>
+
+          {/* Volume control */}
+          <div className="mb-3">
+            <label className={`block text-xs ${helpTextClass} mb-1`}>Voice Volume</label>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min="0.1"
+                max="1.0"
+                step="0.1"
+                value={voiceVolume}
+                onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                className="flex-1"
+              />
+              <span className={`text-sm font-mono ${labelTextClass} min-w-[3rem] text-right`}>
+                {Math.round(voiceVolume * 100)}%
+              </span>
+            </div>
+            <p className={`mt-1 text-xs ${helpTextClass}`}>Adjust volume to hear the voice better even with background music</p>
+          </div>
+
+          {/* Voice preview */}
+          <div className="flex items-center gap-2">
+            <button
+              className={`${isLight ? 'bg-amber-500 hover:bg-amber-600 text-black' : 'bg-blue-600 hover:bg-blue-700 text-white'} text-sm font-semibold py-1.5 px-3 rounded`}
+              onClick={async () => {
+                await resumeAudioContext();
+                // Use the same voice selection logic as the timer announcements
+                const { speak } = await import('../utils/audio');
+                speak('Start');
+              }}
+            >
+              Test Voice
+            </button>
+            <span className={`text-xs ${helpTextClass}`}>Test the selected voice and volume</span>
+          </div>
         </div>
       </div>
 
       <div className="col-span-full">
         <div className={`border rounded p-3 ${cardClass}`}>
-          <span className={`block text-sm font-medium mb-2 ${labelTextClass}`}>Profili</span>
+          <span className={`block text-sm font-medium mb-2 ${labelTextClass}`}>Profiles</span>
           <div className="flex gap-2 items-center">
             <input
               type="text"
-              placeholder="Nome profilo (es. Workout)"
+              placeholder="Profile name (e.g. Workout)"
               value={profileName}
               onChange={(e) => setProfileName(e.target.value)}
               className={`flex-1 rounded-md px-3 py-1.5 ${fieldClass}`}
@@ -489,19 +597,19 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
             <button
               className={`${isLight ? 'bg-amber-500 hover:bg-amber-600 text-black' : 'bg-blue-600 hover:bg-blue-700 text-white'} text-sm font-semibold py-1.5 px-3 rounded`}
               onClick={saveCurrentAsProfile}
-            >Salva</button>
+            >Save</button>
           </div>
           <div className="mt-2 space-y-1 max-h-40 overflow-auto pr-1">
             {Object.keys(profiles).length === 0 && (
-              <div className={`text-xs ${helpTextClass}`}>Nessun profilo salvato</div>
+              <div className={`text-xs ${helpTextClass}`}>No saved profiles</div>
             )}
             {Object.keys(profiles).sort().map((name) => (
               <div key={name} className="flex items-center justify-between gap-2">
                 <div className={`text-sm ${labelTextClass}`}>{name}</div>
                 <div className="flex gap-1">
-                  <button className={`${isLight ? 'bg-gray-200 text-gray-900 hover:bg-gray-300' : 'bg-gray-600 text-white hover:bg-gray-500'} text-xs font-semibold py-1 px-2 rounded`} onClick={() => applyProfileToForm(name)}>Carica</button>
-                  <button className={`${isLight ? 'bg-gray-200 text-gray-900 hover:bg-gray-300' : 'bg-gray-600 text-white hover:bg-gray-500'} text-xs font-semibold py-1 px-2 rounded`} onClick={() => renameProfile(name)}>Rinomina</button>
-                  <button className={`${isLight ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-red-700 hover:bg-red-800 text-white'} text-xs font-semibold py-1 px-2 rounded`} onClick={() => deleteProfile(name)}>Elimina</button>
+                  <button className={`${isLight ? 'bg-gray-200 text-gray-900 hover:bg-gray-300' : 'bg-gray-600 text-white hover:bg-gray-500'} text-xs font-semibold py-1 px-2 rounded`} onClick={() => applyProfileToForm(name)}>Load</button>
+                  <button className={`${isLight ? 'bg-gray-200 text-gray-900 hover:bg-gray-300' : 'bg-gray-600 text-white hover:bg-gray-500'} text-xs font-semibold py-1 px-2 rounded`} onClick={() => renameProfile(name)}>Rename</button>
+                  <button className={`${isLight ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-red-700 hover:bg-red-800 text-white'} text-xs font-semibold py-1 px-2 rounded`} onClick={() => deleteProfile(name)}>Delete</button>
                 </div>
               </div>
             ))}
@@ -514,7 +622,7 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
             <input type="checkbox" checked={hapticsEnabled} onChange={(e) => onToggleHaptics && onToggleHaptics(e.target.checked)} />
             <span>Haptics</span>
           </label>
-          <p className={`mt-1 text-xs ${helpTextClass}`}>Abilita vibrazione sui pulsanti supportati</p>
+          <p className={`mt-1 text-xs ${helpTextClass}`}>Enable vibration on supported buttons</p>
         </div>
       </div>
       <div className={`border rounded p-3 ${cardClass} h-full` }>
@@ -531,7 +639,7 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
       </div>
       <div className={`border rounded p-3 ${cardClass} h-full`}>
         <DurationPicker
-          label="Pausa breve"
+          label="Short Break"
           seconds={shortBreak}
           onChange={setShortBreak}
           theme={theme}
@@ -543,7 +651,7 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
       </div>
       <div className={`border rounded p-3 ${cardClass} h-full`}>
         <DurationPicker
-          label="Pausa lunga"
+          label="Long Break"
           seconds={longBreak}
           onChange={setLongBreak}
           theme={theme}
@@ -556,7 +664,7 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
       {runMode === 'workday' ? (
         <div className={`border rounded p-3 ${cardClass}`}>
           <DurationPicker
-            label="Giornata"
+            label="Workday"
             seconds={workday}
             onChange={setWorkday}
             theme={theme}
@@ -568,7 +676,7 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
         </div>
       ) : (
         <div className={`border rounded p-3 ${cardClass}`}>
-          <label htmlFor="cycles" className={`block text-sm font-medium ${labelTextClass}`}>Cicli pomodoro</label>
+          <label htmlFor="cycles" className={`block text-sm font-medium ${labelTextClass}`}>Pomodoro Cycles</label>
           <div className="mt-1 flex items-center gap-2">
             <button className={`px-2 py-1 rounded ${smallBtn}`} onMouseDown={(e)=>startHold(e,()=>setCycles((v)=>Math.max(1,v-1)))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={(e)=>startHold(e,()=>setCycles((v)=>Math.max(1,v-1)))} onTouchEnd={stopHold}>-1</button>
             <input
@@ -584,7 +692,7 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
         </div>
       )}
       <div className={`border rounded p-3 ${cardClass}`}>
-        <label htmlFor="longEvery" className={`block text-sm font-medium ${labelTextClass}`}>Pausa lunga ogni (pomodori)</label>
+        <label htmlFor="longEvery" className={`block text-sm font-medium ${labelTextClass}`}>Long break every (pomodoros)</label>
         <div className="mt-1 flex items-center gap-2">
           <button className={`px-2 py-1 rounded ${smallBtn}`} onMouseDown={(e)=>startHold(e,()=>setLongEvery((v)=>Math.max(2,v-1)))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={(e)=>startHold(e,()=>setLongEvery((v)=>Math.max(2,v-1)))} onTouchEnd={stopHold}>-1</button>
           <input
@@ -595,7 +703,7 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
             onChange={(e) => setLongEvery(Math.max(2, Number(e.target.value)))}
             className={`block w-full rounded-md px-3 py-1.5 ${fieldClass}`}
           />
-          <button className={`px-2 py-1 rounded ${smallBtn}`} onMouseDown={(e)=>startHold(e,()=>setLongEvery((v)=>Math.max(2,v+1)))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={(e)=>startHold(e,()=>setLongEvery((v)=>Math.max(2,v+1)))} onTouchEnd={stopHold}>+1</button>
+          <button className={`px-2 py-1 rounded ${smallBtn}`} onMouseDown={(e)=>startHold(e,()=>setLongEvery((v)=>v+1))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={(e)=>startHold(e,()=>setLongEvery((v)=>v+1))} onTouchEnd={stopHold}>+1</button>
         </div>
       </div>
       
@@ -604,13 +712,13 @@ const TimerSettings: React.FC<TimerSettingsProps> = ({
           className={`w-full ${isLight ? 'bg-gray-200 hover:bg-gray-300 text-gray-900' : 'bg-gray-600 hover:bg-gray-500 text-white'} font-bold py-2 px-4 rounded`}
           onClick={handleResetDefaults}
         >
-          Ripristina default
+          Reset Defaults
         </button>
         <button
           className={`w-full ${isLight ? 'bg-amber-500 hover:bg-amber-600 text-black' : 'bg-green-600 hover:bg-green-700 text-white'} font-bold py-2 px-4 rounded`}
           onClick={handleChange}
         >
-          Applica impostazioni
+          Apply Settings
         </button>
       </div>
     </div>

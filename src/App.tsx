@@ -236,6 +236,7 @@ function App() {
     if (hapticsEnabled) vibrateShort();
   };
 
+
   
 
   // Auto-snapshot diary every 5 minutes to avoid data loss on refresh/close
@@ -305,7 +306,7 @@ function App() {
       setPomodorosCompleted(nextCompleted);
       setCumulativePomodoros((c) => c + 1);
       
-      // Aggiorna immediatamente solo i pomodori nel Diario quando termina un pomodoro
+      // Update only pomodoros in the Diary immediately when a pomodoro ends
       updatePomodorosOnly();
       
       if (scheduleType === 'shortOnly') {
@@ -556,7 +557,7 @@ function App() {
           <button
             className={`${theme==='gold' ? 'bg-amber-500 hover:bg-amber-600 text-black' : 'bg-gray-700 hover:bg-gray-600 text-white'} text-xs font-semibold py-1.5 px-3 rounded`}
             onClick={() => setShowSettings(false)}
-          >Chiudi</button>
+          >Close</button>
         </div>
       </div>
 
@@ -566,7 +567,7 @@ function App() {
           <button
             className={`${theme==='gold' ? 'bg-amber-400 hover:bg-amber-500 text-black' : 'bg-purple-600 hover:bg-purple-700 text-white'} text-xs font-semibold py-1.5 px-3 rounded`}
             onClick={() => { try { writeDiarySnapshot(); } catch {} setShowDiary(false); }}
-          >Chiudi Diario</button>
+          >Close Diary</button>
         </div>
         <div className="flex-1 min-h-0">
           <Diary theme={theme} currentActive={cumulativeActiveSec} currentBreak={cumulativeBreakSec} currentElapsed={elapsedWorkdayTime} currentPoms={cumulativePomodoros} currentProfile={currentProfile} />
@@ -576,9 +577,10 @@ function App() {
       {/* Main view with Timer (kept mounted; hidden when settings/diary open) */}
       <div className={`${showSettings || showDiary ? 'hidden' : ''} flex flex-col h-full`}>
         <div className="text-center mb-2">
-          <p className={`text-xl font-bold ${accentTextClass}`}>Attività in corso</p>
+          <p className={`text-xl font-bold ${accentTextClass}`}>Activity in Progress</p>
           <p className={`text-xs mt-1 ${sectionTextClass}`}><span className="font-semibold">{currentProfile}</span></p>
         </div>
+
         <div className="flex-1 flex items-center justify-center">
           <Timer
             duration={getCurrentDuration()}
@@ -596,19 +598,19 @@ function App() {
               <button
                 className={`${theme==='gold' ? 'bg-amber-500 hover:bg-amber-600 text-black' : 'bg-blue-600 hover:bg-blue-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
                 onClick={async () => { await resumeAudioContext(); startWorkday(); }}
-              >Avvia</button>
+              >Start</button>
             )}
             {isTimerRunning && (
               <button
                 className={`${theme==='gold' ? 'bg-amber-700 hover:bg-amber-800 text-black' : 'bg-red-600 hover:bg-red-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
                 onClick={() => { if (hapticsEnabled) vibrateWarning(); setIsTimerRunning(false); }}
-              >Pausa</button>
+              >Pause</button>
             )}
             {!isTimerRunning && hasEverStarted && (
               <button
                 className={`${theme==='gold' ? 'bg-amber-500 hover:bg-amber-600 text-black' : 'bg-blue-600 hover:bg-blue-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
                 onClick={() => { if (hapticsEnabled) vibrateShort(); resumeTimer(); }}
-              >Riprendi</button>
+              >Resume</button>
             )}
             <button
               className={`${theme==='gold' ? 'bg-yellow-700 hover:bg-yellow-800 text-black' : 'bg-gray-600 hover:bg-gray-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
@@ -621,7 +623,7 @@ function App() {
             <button
               className={`${theme==='gold' ? 'bg-amber-300 hover:bg-amber-400 text-black' : 'bg-teal-600 hover:bg-teal-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
               onClick={() => { try { writeDiarySnapshot(); } catch {} setShowDiary(true); }}
-            >Diario</button>
+            >Diary</button>
           </div>
           <div className="mt-3 grid grid-cols-1 gap-3 text-xs">
             <WorkdayProgress
@@ -644,6 +646,7 @@ function App() {
               totalSecondsLeft={runMode==='workday' ? (workdayDuration - elapsedWorkdayTime) : null}
               theme={theme}
               scheduleType={scheduleType}
+              pomodorosCompleted={pomodorosCompleted}
             />
           </div>
         </div>

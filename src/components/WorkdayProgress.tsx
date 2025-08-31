@@ -27,11 +27,11 @@ const WorkdayProgress: React.FC<WorkdayProgressProps> = ({
   let label = '';
   if (mode === 'workday') {
     progressPct = totalWorkdayDuration > 0 ? (elapsedWorkdayTime / totalWorkdayDuration) * 100 : 0;
-    label = `Giornata: ${(progressPct).toFixed(1)}%`;
+    label = `Workday: ${(progressPct).toFixed(1)}%`;
   } else {
     progressPct = targetCycles > 0 ? (pomodorosCompleted / targetCycles) * 100 : 0;
     const remaining = Math.max(0, targetCycles - pomodorosCompleted);
-    label = `Cicli: ${pomodorosCompleted}/${targetCycles} (mancano ${remaining})`;
+    label = `Cycles: ${pomodorosCompleted}/${targetCycles} (${remaining} remaining)`;
   }
 
   const labelClass = theme === 'gold' ? 'text-gray-800' : 'text-gray-200';
@@ -65,8 +65,10 @@ const WorkdayProgress: React.FC<WorkdayProgressProps> = ({
       </div>
       <p className={`text-sm ${labelClass} mt-2 font-medium`}>{label}</p>
       <div className={`mt-1 text-xs ${labelClass} grid grid-cols-2 gap-2`}>
-        <div>Attività: {fmt(cumulativeActiveSec)}</div>
-        <div>Pausa: {fmt(cumulativeBreakSec)}</div>
+        <div className="text-xs text-gray-400 space-y-1">
+          <div>Activity: {fmt(cumulativeActiveSec)}</div>
+          <div>Break: {fmt(cumulativeBreakSec)}</div>
+        </div>
       </div>
     </div>
   );

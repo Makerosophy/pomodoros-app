@@ -54,7 +54,7 @@ type Entries = Record<string, DiaryEntry>;
 const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 0, currentElapsed = 0, currentPoms = 0, currentProfile }) => {
   const [refreshKey, setRefreshKey] = React.useState(0);
   
-  // Ascolta gli aggiornamenti del Diario
+  // Listen for Diary updates
   React.useEffect(() => {
     const handleDiaryUpdate = () => {
       setRefreshKey(prev => prev + 1);
@@ -150,7 +150,7 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
     byDay[s.dateKey] = d;
   });
   
-  // Per oggi, combina i valori salvati con i contatori live per la visualizzazione
+  // For today, combine saved values with live counters for display
   const todayTotals = byDay[todayKey] || { active: 0, brk: 0, poms: 0 };
   const diaryEntry = entries[todayKey];
   
@@ -165,9 +165,9 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
       brk: todayTotals.brk + (diaryEntry.brk || 0) + deltaBreak,
       poms: todayTotals.poms + (diaryEntry.poms || 0) + deltaPoms,
     };
-  } else {
-    // Se non c'è ancora un entry nel Diario, usa i contatori live
-    byDay[todayKey] = {
+      } else {
+      // If there's no entry in the Diary yet, use live counters
+      byDay[todayKey] = {
       active: todayTotals.active + Math.max(0, currentActive),
       brk: todayTotals.brk + Math.max(0, currentBreak),
       poms: todayTotals.poms + Math.max(0, currentPoms || 0),
@@ -202,7 +202,7 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
       totals.brk += (diaryEntry.brk || 0) + deltaBreak;
       totals.poms += (diaryEntry.poms || 0) + deltaPoms;
     } else {
-      // Se non c'è ancora un entry nel Diario, usa i contatori live
+      // If there's no entry in the Diary yet, use live counters
       totals.active += Math.max(0, currentActive || 0);
       totals.brk += Math.max(0, currentBreak || 0);
       totals.poms += Math.max(0, currentPoms || 0);
@@ -221,13 +221,13 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
     profileTotals[s.profile] = pt;
   });
   
-  // Aggiungi i valori di oggi dal Diario per il profilo corrente
+  // Add today's values from the Diary for the current profile
   if (shouldAddLive && currentProfile) {
     const diaryEntry = entries[todayKey];
     if (diaryEntry && diaryEntry.byProfile && diaryEntry.byProfile[currentProfile]) {
       const todayProfile = diaryEntry.byProfile[currentProfile];
       const pt = profileTotals[currentProfile] || { active: 0, brk: 0, poms: 0 };
-      // Calcola i delta live per questo profilo
+      // Calculate live deltas for this profile
       const deltaActive = Math.max(0, currentActive - (diaryEntry._baseActive || 0));
       const deltaBreak = Math.max(0, currentBreak - (diaryEntry._baseBreak || 0));
       const deltaPoms = Math.max(0, currentPoms - (diaryEntry._basePoms || 0));
@@ -248,17 +248,17 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
   return (
     <div className="h-full overflow-auto">
       <div className="flex items-center justify-between mb-3">
-        <h2 className={`text-lg font-bold ${headingClass}`}>Diario giornaliero</h2>
+        <h2 className={`text-lg font-bold ${headingClass}`}>Daily Diary</h2>
         <div className="flex items-center gap-2">
-          <span className={`text-xs ${rowText}`}>Intervallo</span>
+          <span className={`text-xs ${rowText}`}>Interval</span>
           <select value={range} onChange={(e) => setRange(e.target.value as any)} className={`text-xs rounded px-2 py-1 ${theme==='gold'?'bg-white text-gray-900 border border-gray-300':'bg-gray-800 text-gray-100 border border-gray-700'}`}>
-            <option value="7">7 giorni</option>
-            <option value="30">30 giorni</option>
-            <option value="all">Tutto</option>
+            <option value="7">7 days</option>
+            <option value="30">30 days</option>
+            <option value="all">All</option>
           </select>
-          <span className={`text-xs ${rowText}`}>Profilo</span>
+          <span className={`text-xs ${rowText}`}>Profile</span>
           <select value={profileFilter} onChange={(e) => setProfileFilter(e.target.value)} className={`text-xs rounded px-2 py-1 ${theme==='gold'?'bg-white text-gray-900 border border-gray-300':'bg-gray-800 text-gray-100 border border-gray-700'}`}>
-            <option value="all">Tutti</option>
+            <option value="all">All</option>
             {allProfiles.map(p => (
               <option key={p} value={p}>{p}</option>
             ))}
@@ -269,66 +269,69 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
       {/* Dashboard semplificata */}
       <div className={`grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3`}>
         <div className={`border rounded p-3 ${cardClass}`}>
-          <div className={`text-[11px] ${rowText}`}>Pomodori totali</div>
+          <div className={`text-[11px] ${rowText}`}>Total Pomodoros</div>
           <div className={`text-sm font-semibold ${rowText}`}>{totals.poms}</div>
         </div>
         <div className={`border rounded p-3 ${cardClass}`}>
-          <div className={`text-[11px] ${rowText}`}>Ore totali</div>
+          <div className={`text-[11px] ${rowText}`}>Total Hours</div>
           <div className={`text-sm font-semibold ${rowText}`}>{formatMinSec(totalOverall)}</div>
         </div>
         <div className={`border rounded p-3 ${cardClass}`}>
-          <div className={`text-[11px] ${rowText}`}>Ore attive totali</div>
+          <div className={`text-[11px] ${rowText}`}>Total Active Hours</div>
           <div className={`text-sm font-semibold ${rowText}`}>{formatMinSec(totals.active)}</div>
         </div>
         <div className={`border rounded p-3 ${cardClass}`}>
-          <div className={`text-[11px] ${rowText}`}>Profilo più attivo</div>
+          <div className={`text-[11px] ${rowText}`}>Most Active Profile</div>
           <div className={`text-sm font-semibold ${rowText}`}>{topProfile ? `${topProfile.name} (${formatMinSec(topProfile.active)})` : '—'}</div>
         </div>
       </div>
 
-      {/* Lista sessioni concluse (entry per attività) */}
+      {/* Session list */}
       <div className={`border rounded p-2 ${cardClass}`}>
-        <div className={`text-sm font-semibold ${rowText}`}>Sessioni concluse</div>
+        <div className={`text-sm font-semibold ${rowText}`}>Completed Sessions</div>
         <div className="mt-2">
           <div className={`hidden sm:grid grid-cols-5 gap-2 text-[11px] font-semibold ${rowText} mb-2 text-center`}>
-            <div>Attività</div>
-            <div>Totale</div>
-            <div>Attiva</div>
-            <div>Pausa</div>
-            <div>Data/stop</div>
+            <div>Activity</div>
+            <div>Total</div>
+            <div>Active</div>
+            <div>Break</div>
+            <div>Date/Stop</div>
           </div>
+          
           {sessionsFiltered.length === 0 && (
-            <div className={`text-xs ${rowText}`}>Nessuna sessione</div>
+            <div className={`text-xs ${rowText}`}>No sessions</div>
           )}
-                     {sessionsFiltered.map((s, idx) => {
-             const total = s.active + s.break;
-             const ended = new Date(s.endedAt);
-             const hhmm = `${ended.getHours().toString().padStart(2,'0')}:${ended.getMinutes().toString().padStart(2,'0')}`;
+          
+          {sessionsFiltered.map((s, idx) => {
+            const total = s.active + s.break;
+            const ended = new Date(s.endedAt);
+            const timeStr = `${ended.getHours().toString().padStart(2,'0')}:${ended.getMinutes().toString().padStart(2,'0')}`;
             const zebra = theme === 'gold'
               ? (idx % 2 === 0 ? 'bg-white/80' : 'bg-white/60')
               : (idx % 2 === 0 ? 'bg-black/40' : 'bg-black/25');
+            
             return (
               <div key={s.id} className={`text-xs ${rowText} border rounded p-2 ${cardClass} ${zebra}`}>
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
                   <div>
-                    <div className="sm:hidden opacity-70">Attività</div>
+                    <div className="sm:hidden opacity-70">Activity</div>
                     <div className="text-sm font-semibold">{s.profile}</div>
                   </div>
                   <div>
-                    <div className="sm:hidden opacity-70">Totale</div>
+                    <div className="sm:hidden opacity-70">Total</div>
                     <div className="font-mono text-sm">{formatMinSec(total)}</div>
                   </div>
                   <div>
-                    <div className="sm:hidden opacity-70">Attiva</div>
+                    <div className="sm:hidden opacity-70">Active</div>
                     <div className="font-mono text-sm">{formatMinSec(s.active)}</div>
                   </div>
                   <div>
-                    <div className="sm:hidden opacity-70">Pausa</div>
+                    <div className="sm:hidden opacity-70">Break</div>
                     <div className="font-mono text-sm">{formatMinSec(s.break)}</div>
                   </div>
                   <div>
-                    <div className="sm:hidden opacity-70">Data/stop</div>
-                                         <div className="font-mono text-sm">{s.dateKey} {hhmm}</div>
+                    <div className="sm:hidden opacity-70">Date/Stop</div>
+                    <div className="font-mono text-sm">{s.dateKey} {timeStr}</div>
                   </div>
                 </div>
               </div>

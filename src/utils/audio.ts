@@ -173,23 +173,183 @@ export const playFinalChimeByName = async (name: SoundName): Promise<void> => {
 };
 // -------- Speech synthesis helpers --------
 type PhaseType = 'pomodoro' | 'shortBreak' | 'longBreak';
+type VoiceType = 'male' | 'female' | 'system';
 
-export const speak = (text: string, options?: { lang?: string; rate?: number; pitch?: number; volume?: number }) => {
+// Get voice settings from localStorage
+const getVoiceSettings = () => {
+  try {
+    const voiceType = localStorage.getItem('tempo_voice') as VoiceType || 'system';
+    const voiceVolume = parseFloat(localStorage.getItem('tempo_voice_volume') || '0.8');
+    return { voiceType, voiceVolume: Math.max(0.1, Math.min(1.0, voiceVolume)) };
+  } catch {
+    return { voiceType: 'system' as VoiceType, voiceVolume: 0.8 };
+  }
+};
+
+// Find appropriate voice based on preferences
+const findAppropriateVoice = (preferredType: VoiceType): SpeechSynthesisVoice | null => {
+  try {
+    if (!('speechSynthesis' in window)) return null;
+    
+    // Get voices - this might be empty initially, so we need to wait
+    let voices = window.speechSynthesis.getVoices?.() || [];
+    
+    console.log('Available voices:', voices.map(v => `${v.name} (${v.lang}) - default: ${v.default}`));
+    console.log('Requested voice type:', preferredType);
+    
+    // If no voices available, return null and let the caller handle it
+    if (voices.length === 0) {
+      console.log('No voices available yet');
+      return null;
+    }
+    
+    const selectedVoice = findVoiceFromList(voices, preferredType);
+    console.log(`Selected voice for type ${preferredType}:`, selectedVoice ? `${selectedVoice.name} (${selectedVoice.lang})` : 'none');
+    
+    return selectedVoice;
+  } catch {
+    return null;
+  }
+};
+
+// Helper function to find voice from a list
+const findVoiceFromList = (voices: SpeechSynthesisVoice[], preferredType: VoiceType): SpeechSynthesisVoice | null => {
+  if (voices.length === 0) return null;
+
+  console.log(`Finding voice for type: ${preferredType}`);
+
+  if (preferredType === 'system') {
+    // Use system default voice
+    const defaultVoice = voices.find(v => v.default) || voices[0];
+    console.log(`System mode - using: ${defaultVoice.name} (${defaultVoice.lang})`);
+    return defaultVoice;
+  }
+
+  // Look for English voices of the preferred gender
+  const englishVoices = voices.filter(v => v.lang.startsWith('en'));
+  console.log(`English voices found: ${englishVoices.length}`, englishVoices.map(v => v.name));
+  
+  if (englishVoices.length === 0) {
+    // No English voices, use any available
+    console.log('No English voices, using first available');
+    return voices[0];
+  }
+
+  // Try to find voices with gender indicators in the name
+  let genderVoices = englishVoices.filter(v => {
+    const name = v.name.toLowerCase();
+    if (preferredType === 'male') {
+      // Prefer deep, relaxed male voices
+      // Priority 1: Deep male voices (lower pitch indicators)
+      if (name.includes('david') || name.includes('james') || name.includes('john') || 
+          name.includes('mike') || name.includes('thomas') || name.includes('robert')) {
+        console.log(`Found deep male voice: ${v.name}`);
+        return true;
+      }
+      // Priority 2: Generic male indicators
+      if (name.includes('male') || name.includes('guy') || name.includes('man')) {
+        console.log(`Found generic male voice: ${v.name}`);
+        return true;
+      }
+      // Priority 3: Other common male names
+      if (name.includes('alex') || name.includes('chris') || name.includes('daniel') ||
+          name.includes('michael') || name.includes('william') || name.includes('richard')) {
+        console.log(`Found common male voice: ${v.name}`);
+        return true;
+      }
+      
+      // Priority 4: Try to detect male voices by other means
+      // Some browsers use different naming conventions
+      if (name.includes('en-us') && !name.includes('female') && !name.includes('samantha') && 
+          !name.includes('victoria') && !name.includes('sarah') && !name.includes('emma') && 
+          !name.includes('lisa') && !name.includes('karen') && !name.includes('helena')) {
+        console.log(`Found potential male voice by exclusion: ${v.name}`);
+        return true;
+      }
+      
+      // Priority 5: If no specific male voice found, try to use any voice that's not clearly female
+      // This is a fallback for browsers with limited voice options
+      if (!name.includes('female') && !name.includes('samantha') && !name.includes('victoria') &&
+          !name.includes('sarah') && !name.includes('emma') && !name.includes('lisa') &&
+          !name.includes('karen') && !name.includes('helena') && !name.includes('zoe') &&
+          !name.includes('ava') && !name.includes('sophie')) {
+        console.log(`Found potential male voice by female exclusion: ${v.name}`);
+        return true;
+      }
+      
+      console.log(`Voice ${v.name} doesn't match male criteria`);
+      return false;
+    } else {
+      return name.includes('female') || name.includes('samantha') || name.includes('victoria') ||
+             name.includes('sarah') || name.includes('emma') || name.includes('lisa') ||
+             name.includes('karen') || name.includes('helena');
+    }
+  });
+
+  if (genderVoices.length > 0) {
+    // For male voices, try to find the deepest/relaxed one
+    if (preferredType === 'male') {
+      // Sort by preference: deep voices first
+      genderVoices.sort((a, b) => {
+        const aName = a.name.toLowerCase();
+        const bName = b.name.toLowerCase();
+        
+        // David, James, John are typically deeper voices
+        const aDeep = aName.includes('david') || aName.includes('james') || aName.includes('john');
+        const bDeep = bName.includes('david') || bName.includes('james') || bName.includes('john');
+        
+        if (aDeep && !bDeep) return -1;
+        if (!aDeep && bDeep) return 1;
+        return 0;
+      });
+      
+      console.log(`Sorted male voices by depth:`, genderVoices.map(v => v.name));
+    }
+    
+    const finalVoice = genderVoices[0];
+    console.log(`Final selected voice: ${finalVoice.name} (${finalVoice.lang})`);
+    return finalVoice;
+  }
+
+  // If no gender-specific voices found, use first English voice
+  console.log('No gender-specific voices, using first English voice');
+  return englishVoices[0];
+};
+
+export const speak = async (text: string, options?: { lang?: string; rate?: number; pitch?: number; volume?: number }) => {
   try {
     if (!('speechSynthesis' in window)) return;
+    
+    const { voiceType, voiceVolume } = getVoiceSettings();
+    console.log('Voice settings loaded:', { voiceType, voiceVolume });
+    
+    const voice = findAppropriateVoice(voiceType);
+    
     const utter = new SpeechSynthesisUtterance(text);
     utter.lang = options?.lang ?? 'en-US';
-    utter.rate = options?.rate ?? 1.0;
-    utter.pitch = options?.pitch ?? 1.0;
-    utter.volume = options?.volume ?? 1.0;
-    // Prefer an English voice if available
-    const voices = window.speechSynthesis.getVoices?.() || [];
-    const preferred = voices.find(v => /en[-_](US|GB)/i.test(v.lang)) || voices[0];
-    if (preferred) utter.voice = preferred;
+    
+    // Set specific properties for male voices to make them deeper and more relaxed
+    if (voiceType === 'male') {
+      utter.rate = options?.rate ?? 0.85;  // Slower rate for relaxed feel
+      utter.pitch = options?.pitch ?? 0.7;  // Lower pitch for deeper voice
+    } else {
+      utter.rate = options?.rate ?? 1.0;
+      utter.pitch = options?.pitch ?? 1.0;
+    }
+    
+    utter.volume = options?.volume ?? voiceVolume;
+    
+    if (voice) {
+      utter.voice = voice;
+      console.log(`Using voice: ${voice.name} (${voice.lang}) for type: ${voiceType} with rate: ${utter.rate}, pitch: ${utter.pitch}`);
+    } else {
+      console.log(`No voice found for type: ${voiceType}, using default`);
+    }
+    
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utter);
-  } catch {
-    // ignore
+  } catch (error) {
+    console.error('Error in speak function:', error);
   }
 };
 
