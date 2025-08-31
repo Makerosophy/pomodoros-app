@@ -1,123 +1,184 @@
-# Tempo
+# Tempo - Pomodoro Timer App
 
-Applicazione Pomodoro con interfaccia moderna, realizzata con React, TypeScript, Vite e Tailwind CSS.
+A modern Pomodoro timer application with a beautiful interface, built with React, TypeScript, Vite, and Tailwind CSS.
 
-### Requisiti
-- Node.js 18+ (consigliato LTS)
+## ✨ Features
 
-### Installazione
-1. Clona il repository
+### 🎯 Timer Modes
+- **Workday Mode**: Work for a specific duration (e.g., 8 hours)
+- **Cycles Mode**: Complete a specific number of Pomodoro cycles
+- **Flexible Settings**: Customize Pomodoro, short break, and long break durations
+
+### 🎨 User Interface
+- **Modern Design**: Clean, responsive interface with smooth animations
+- **Theme Support**: Dark (blue) and Light (gold) themes
+- **Progress Tracking**: Visual progress bars for workday and cycles
+- **Schedule Preview**: See upcoming segments and remaining time
+
+### 🔊 Voice Announcements
+- **Voice Selection**: Choose between Male, Female, or System default voices
+- **Specific Voice Picker**: Select from available English voices on your system
+- **Volume Control**: Adjust announcement volume independently
+- **Smart Fallback**: Automatic fallback to system voices if preferred voices unavailable
+
+### 📊 Daily Diary & Statistics
+- **Live Counters**: Real-time tracking of active and total hours
+- **Session Records**: Detailed logs of all Pomodoro sessions
+- **Profile-based Totals**: Separate statistics for different work profiles
+- **Persistent Storage**: All data saved locally using localStorage
+
+### ⚙️ Advanced Settings
+- **Custom Durations**: Set Pomodoro, short break, and long break lengths
+- **Break Scheduling**: Configure when long breaks occur
+- **Workday Duration**: Set total work hours for the day
+- **Real-time Updates**: Settings applied immediately
+
+## 🚀 Getting Started
+
+### Prerequisites
+- Node.js 18+ (LTS recommended)
+
+### Installation
+1. Clone the repository
    ```bash
-   git clone <URL_DEL_REPO>
+   git clone <REPO_URL>
    cd pomodoros-app
    ```
-2. Installa le dipendenze
+
+2. Install dependencies
    ```bash
    npm install
    ```
-3. Avvia l'ambiente di sviluppo
+
+3. Start development server
    ```bash
    npm run dev
    ```
-   L'app sarà disponibile su `http://localhost:5173`.
+   The app will be available at `http://localhost:5173`.
 
-### Build di produzione
+### Production Build
 ```bash
 npm run build
 npm run preview
 ```
-Il comando `preview` serve a testare localmente la build prod su `http://localhost:4173`.
+Use `preview` to test the production build locally at `http://localhost:4173`.
 
-### Funzionamento dell'app
-- **Modalità**: scegli se lavorare a tempo (Workday) o a numero di cicli (Cycles).
-- **Impostazioni timer**: imposta secondi per Pomodoro, pause brevi/lunghe, durata giornata, e ogni quanti Pomodori fare una pausa lunga. Premi "Apply Settings" per applicare.
-- **Controlli**: Avvia giornata, Sospendi, Reimposta.
-- **Tema**: due temi disponibili: Scuro (blu) e Chiaro (oro).
-- **Avanzamento**: visualizza stato corrente, tempo rimanente, progressione giornata/cicli, e anteprima della sequenza.
+## 🎮 How to Use
 
-### Struttura del progetto (principali)
-- `src/App.tsx`: composizione dell'app e gestione stato principale.
-- `src/components/TempoFrame.tsx`: contenitore UI del display.
-- `src/components/Timer.tsx`: countdown con animazione `requestAnimationFrame`.
-- `src/components/TimerSettings.tsx`: impostazioni di durata e modalità.
-- `src/components/WorkdayProgress.tsx`: avanzamento giornata/cicli.
-- `src/components/SchedulePreview.tsx`: anteprima sequenza timer/pause.
-- `src/utils/audio.ts`: suoni e annunci vocali.
+### Basic Timer Operation
+1. **Choose Mode**: Select between Workday (time-based) or Cycles (count-based)
+2. **Configure Settings**: Set durations for Pomodoro, breaks, and workday
+3. **Start Session**: Click "Start Day" to begin your first Pomodoro
+4. **Follow the Flow**: Work during Pomodoro, take short breaks, and long breaks as scheduled
+5. **Monitor Progress**: Watch your progress bars and upcoming segments
 
-### Script disponibili
-- `npm run dev`: avvia dev server Vite.
-- `npm run build`: compila TypeScript e crea la build prod.
-- `npm run preview`: serve la build prod per test locale.
-- `npm run lint`: esegue ESLint.
+### Voice Configuration
+1. **Access Settings**: Go to Timer Settings
+2. **Select Voice Type**: Choose Male, Female, or System
+3. **Pick Specific Voice**: Select from available English voices (optional)
+4. **Adjust Volume**: Set announcement volume to your preference
+5. **Test Voice**: Use the "Test Voice" button to preview your selection
+
+### Daily Diary
+- **Active Hours**: Time spent in actual Pomodoro sessions
+- **Total Hours**: Complete time including breaks
+- **Session History**: Detailed log of all completed sessions
+- **Profile Management**: Organize work by different projects or activities
+
+## 🏗️ Project Structure
+
+### Core Components
+- `src/App.tsx`: Main application logic, timer state, and data management
+- `src/components/Timer.tsx`: Timer display with countdown animation
+- `src/components/TimerSettings.tsx`: User-configurable timer settings and voice options
+- `src/components/WorkdayProgress.tsx`: Progress visualization for workday/cycles
+- `src/components/SchedulePreview.tsx`: Upcoming segments and remaining time display
+- `src/components/Diary.tsx`: Daily statistics and session records
+- `src/components/WatchFace.tsx`: Timer face component
+
+### Utilities
+- `src/utils/audio.ts`: Speech synthesis, voice selection, and audio management
+- `src/utils/constants.ts`: Application constants, voice options, and storage keys
+- `src/utils/dates.ts`: Date formatting and time calculations
+- `src/utils/haptics.ts`: Haptic feedback for mobile devices
+
+### Configuration Files
+- `tailwind.config.js`: Tailwind CSS configuration
+- `tsconfig.json`: TypeScript configuration
+- `vite.config.ts`: Vite build configuration
+- `eslint.config.js`: ESLint rules and configuration
+
+## 🛠️ Available Scripts
+
+- `npm run dev`: Start Vite development server
+- `npm run build`: Compile TypeScript and create production build
+- `npm run preview`: Serve production build for local testing
+- `npm run lint`: Run ESLint for code quality checks
+
+## 🔧 Technical Details
+
+### State Management
+- **React Hooks**: useState, useEffect, useMemo, useCallback for component state
+- **Local Storage**: Persistent data storage for settings, diary, and voice preferences
+- **Custom Events**: Inter-component communication via window events
+
+### Voice System
+- **Web Speech API**: Primary speech synthesis engine
+- **Voice Filtering**: Intelligent selection based on gender preference and language
+- **Fallback System**: Automatic fallback to available system voices
+- **Performance**: Optimized voice loading and caching
+
+### Performance Features
+- **RequestAnimationFrame**: Smooth timer animations
+- **Memoization**: Optimized calculations and re-renders
+- **Efficient Updates**: Minimal DOM updates during timer operation
+
+## 🌟 Recent Updates
+
+### Voice Selection System
+- Added Male/Female/System voice options
+- Implemented specific voice picker from available English voices
+- Added volume control for voice announcements
+- Enhanced voice filtering for deep/relaxed male voices
+
+### UI Improvements
+- Complete translation from Italian to English
+- Enhanced "Next Segments" section with accurate counters
+- Fixed "Total Time" calculation in schedule preview
+- Improved time formatting and display
+
+### Bug Fixes
+- Resolved 2-second counter update issue in daily diary
+- Fixed remaining pomodoros calculation logic
+- Corrected break scheduling algorithms
+- Enhanced TypeScript type safety
+
+## 📱 Browser Support
+
+- **Chrome**: Full support with all features
+- **Firefox**: Full support with all features
+- **Safari**: Full support with all features
+- **Edge**: Full support with all features
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🆘 Support
+
+If you encounter any issues or have questions:
+1. Check the existing issues in the repository
+2. Create a new issue with detailed description
+3. Include browser version and operating system information
 
 ---
 
-# React + TypeScript + Vite
-
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+**Built with ❤️ using React, TypeScript, Vite, and Tailwind CSS**
