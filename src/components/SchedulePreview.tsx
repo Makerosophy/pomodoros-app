@@ -36,6 +36,20 @@ const colorFor = (t: SegmentType, theme: Theme) => {
   return t === 'pomodoro' ? 'bg-blue-500' : t === 'shortBreak' ? 'bg-emerald-500' : 'bg-amber-500';
 };
 
+// Decide the next break type given the schedule settings and how many pomodoros
+// will have been completati dopo il prossimo pomodoro.
+const getBreakType = (
+  scheduleType: 'standard' | 'shortOnly' | 'longOnly',
+  longEvery: number,
+  completedPomodorosAfterNext: number
+): SegmentType => {
+  if (scheduleType === 'shortOnly') return 'shortBreak';
+  if (scheduleType === 'longOnly') return 'longBreak';
+  return completedPomodorosAfterNext > 0 && longEvery > 0 && (completedPomodorosAfterNext % longEvery === 0)
+    ? 'longBreak'
+    : 'shortBreak';
+};
+
 const SchedulePreview: React.FC<SchedulePreviewProps> = ({
   currentType,
   pomodoroSeconds,
@@ -51,95 +65,66 @@ const SchedulePreview: React.FC<SchedulePreviewProps> = ({
   // Calculate only the next segment
   const getNextSegment = (): { type: SegmentType; label: string; remaining: number } => {
     if (currentType === 'pomodoro') {
-      // After a pomodoro comes a break
-      const nextPomCount = (remainingPomodoros ?? 0) + 1;
-      const nextBreak: SegmentType = scheduleType === 'shortOnly' 
-        ? 'shortBreak' 
-        : scheduleType === 'longOnly' 
-        ? 'longBreak' 
-        : (nextPomCount % longEvery === 0 ? 'longBreak' : 'shortBreak');
-      
-      return {
-        type: nextBreak,
-        label: labelFor(nextBreak),
-        remaining: remainingPomodoros ?? 0
-      };
-    } else {
-      // After a break comes a pomodoro
-      return {
-        type: 'pomodoro',
-        label: 'Pomodoro',
-        remaining: Math.max(0, (remainingPomodoros ?? 0) - 1)
-      };
+      // After a pomodoro comes a break, except if this was the final pomodoro (cycles mode)
+      const totalRemaining = remainingPomodoros ?? 0;
+      if (totalRemaining <= 1) {
+        // No further break after the last pomodoro
+        return { type: 'pomodoro', label: 'Pomodoro', remaining: 0 };
+      }
+
+      const nextPomCompleted = (pomodorosCompleted || 0) + 1;
+      const nextBreak = getBreakType(scheduleType, longEvery, nextPomCompleted);
+      return { type: nextBreak, label: labelFor(nextBreak), remaining: totalRemaining };
     }
+
+    // After a break comes a pomodoro
+    return { type: 'pomodoro', label: 'Pomodoro', remaining: Math.max(0, (remainingPomodoros ?? 0) - 1) };
   };
 
   const nextSegment = getNextSegment();
   
   // Calculate remaining totals
   const getRemainingInfo = () => {
-    console.log('SchedulePreview getRemainingInfo called with:', {
-      remainingPomodoros,
-      totalSecondsLeft,
-      scheduleType,
-      longEvery,
-      pomodoroSeconds,
-      shortBreakSeconds,
-      longBreakSeconds,
-      currentType,
-      pomodorosCompleted
-    });
-    
     if (remainingPomodoros !== null && remainingPomodoros !== undefined) {
-      // Cycles mode - calculate remaining pomodoros correctly
+      // Cycles mode - simulate the remaining sequence stepwise (include current segment fully)
       const totalPomodoros = remainingPomodoros;
-      const totalBreaks = totalPomodoros; // Each pomodoro has a break
-      
-      // Calculate total time considering break type
-      let totalTime = totalPomodoros * pomodoroSeconds;
-      if (scheduleType === 'shortOnly') {
-        totalTime += totalBreaks * shortBreakSeconds;
-      } else if (scheduleType === 'longOnly') {
-        totalTime += totalBreaks * longBreakSeconds;
-      } else {
-        // Standard mode: calculate how many long breaks there will be
-        // We need to consider the current position in the sequence
-        let longBreaks = 0;
-        let shortBreaks = 0;
-        
-        // Get the current pomodoro count (completed + current if in pomodoro)
-        const currentPomCount = (pomodorosCompleted || 0) + (currentType === 'pomodoro' ? 1 : 0);
-        
-        // Count breaks for each remaining pomodoro
-        for (let i = 0; i < totalPomodoros; i++) {
-          const pomNumber = currentPomCount + i;
-          if (pomNumber % longEvery === 0) {
-            longBreaks++;
-          } else {
-            shortBreaks++;
-          }
+      type Step = { type: SegmentType; duration: number };
+      const steps: Step[] = [];
+      let pomsLeft = totalPomodoros;
+      let completed = pomodorosCompleted || 0;
+
+      // Include current running segment fully (stepwise behavior)
+      if (currentType === 'pomodoro') {
+        steps.push({ type: 'pomodoro', duration: pomodoroSeconds });
+        pomsLeft = Math.max(0, pomsLeft - 1);
+        completed += 1;
+        // Include the immediate break after the current pomodoro if there are more pomodoros left
+        if (pomsLeft > 0) {
+          const breakType = getBreakType(scheduleType, longEvery, completed);
+          steps.push({ type: breakType, duration: breakType === 'longBreak' ? longBreakSeconds : shortBreakSeconds });
         }
-        totalTime += (longBreaks * longBreakSeconds) + (shortBreaks * shortBreakSeconds);
+      } else if (currentType === 'shortBreak') {
+        steps.push({ type: 'shortBreak', duration: shortBreakSeconds });
+      } else if (currentType === 'longBreak') {
+        steps.push({ type: 'longBreak', duration: longBreakSeconds });
       }
-      
-      console.log('Cycles calculation result:', {
-        totalPomodoros,
-        totalTime,
-        pomodoroSeconds,
-        shortBreakSeconds,
-        longBreakSeconds,
-        scheduleType,
-        longEvery,
-        currentType,
-        pomodorosCompleted,
-        currentPomCount: (pomodorosCompleted || 0) + (currentType === 'pomodoro' ? 1 : 0)
-      });
-      
-      return {
-        pomodoros: totalPomodoros,
-        time: totalTime,
-        mode: 'cycles' as const
-      };
+
+      // Generate the rest of the schedule until all remaining pomodoros are consumed
+      while (pomsLeft > 0) {
+        // Add next pomodoro
+        steps.push({ type: 'pomodoro', duration: pomodoroSeconds });
+        pomsLeft -= 1;
+        completed += 1;
+
+        // Add a break only if there are still pomodoros left (no break after final pomodoro)
+        if (pomsLeft > 0) {
+          const breakType = getBreakType(scheduleType, longEvery, completed);
+          steps.push({ type: breakType, duration: breakType === 'longBreak' ? longBreakSeconds : shortBreakSeconds });
+        }
+      }
+
+      const totalTime = steps.reduce((acc, s) => acc + s.duration, 0);
+      return { pomodoros: totalPomodoros, time: totalTime, mode: 'cycles' as const };
     } else if (totalSecondsLeft !== null && totalSecondsLeft !== undefined) {
       // Workday mode
       const remainingHours = Math.floor(totalSecondsLeft / 3600);

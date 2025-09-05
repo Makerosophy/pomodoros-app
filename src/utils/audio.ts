@@ -190,23 +190,9 @@ const getVoiceSettings = () => {
 const findAppropriateVoice = (preferredType: VoiceType): SpeechSynthesisVoice | null => {
   try {
     if (!('speechSynthesis' in window)) return null;
-    
-    // Get voices - this might be empty initially, so we need to wait
-    let voices = window.speechSynthesis.getVoices?.() || [];
-    
-    console.log('Available voices:', voices.map(v => `${v.name} (${v.lang}) - default: ${v.default}`));
-    console.log('Requested voice type:', preferredType);
-    
-    // If no voices available, return null and let the caller handle it
-    if (voices.length === 0) {
-      console.log('No voices available yet');
-      return null;
-    }
-    
-    const selectedVoice = findVoiceFromList(voices, preferredType);
-    console.log(`Selected voice for type ${preferredType}:`, selectedVoice ? `${selectedVoice.name} (${selectedVoice.lang})` : 'none');
-    
-    return selectedVoice;
+    const voices = window.speechSynthesis.getVoices?.() || [];
+    if (voices.length === 0) return null;
+    return findVoiceFromList(voices, preferredType);
   } catch {
     return null;
   }
@@ -216,22 +202,42 @@ const findAppropriateVoice = (preferredType: VoiceType): SpeechSynthesisVoice | 
 const findVoiceFromList = (voices: SpeechSynthesisVoice[], preferredType: VoiceType): SpeechSynthesisVoice | null => {
   if (voices.length === 0) return null;
 
-  console.log(`Finding voice for type: ${preferredType}`);
-
   if (preferredType === 'system') {
-    // Use system default voice
-    const defaultVoice = voices.find(v => v.default) || voices[0];
-    console.log(`System mode - using: ${defaultVoice.name} (${defaultVoice.lang})`);
-    return defaultVoice;
+    // Prefer a warm, natural female variant for the system default
+    const englishVoices = voices.filter(v => v.lang.startsWith('en'));
+    const pool = englishVoices.length > 0 ? englishVoices : voices;
+
+    const femalePreferenceOrder = [
+      'siri female', 'siri (female)', 'siri voice 3',
+      'samantha', 'victoria', 'karen', 'emma', 'lisa', 'helena', 'sarah', 'zoe', 'ava', 'sophie',
+      'microsoft aria', 'microsoft zira', 'microsoft jenny',
+      'google us english female', 'google uk english female', 'uk english female'
+    ];
+
+    const prioritized = pool.find(v => {
+      const name = v.name.toLowerCase();
+      return femalePreferenceOrder.some(p => name.includes(p));
+    });
+    if (prioritized) return prioritized;
+
+    const genericFemale = pool.find(v => {
+      const name = v.name.toLowerCase();
+      return name.includes('female') || name.includes('samantha') || name.includes('victoria') ||
+             name.includes('sarah') || name.includes('emma') || name.includes('lisa') ||
+             name.includes('karen') || name.includes('helena') || name.includes('ava') ||
+             name.includes('zoe') || name.includes('sophie') || name.includes('aria') ||
+             name.includes('zira') || name.includes('jenny');
+    });
+    if (genericFemale) return genericFemale;
+
+    const fallbackDefault = voices.find(v => v.default) || voices[0];
+    return fallbackDefault;
   }
 
   // Look for English voices of the preferred gender
   const englishVoices = voices.filter(v => v.lang.startsWith('en'));
-  console.log(`English voices found: ${englishVoices.length}`, englishVoices.map(v => v.name));
-  
   if (englishVoices.length === 0) {
     // No English voices, use any available
-    console.log('No English voices, using first available');
     return voices[0];
   }
 
@@ -239,22 +245,40 @@ const findVoiceFromList = (voices: SpeechSynthesisVoice[], preferredType: VoiceT
   let genderVoices = englishVoices.filter(v => {
     const name = v.name.toLowerCase();
     if (preferredType === 'male') {
+      // First, prefer known warm/human male voices common on macOS/Windows/Chrome
+      const warmMalePreference = [
+        'alex',                 // macOS natural voice
+        'tom',                  // macOS male
+        'daniel',               // common warm male
+        'matthew',              // US male
+        'siri male',            // Siri male variants
+        'siri (male)',
+        'siri voice 2',
+        'google us english',    // Chrome Google voices
+        'google english (united states)',
+        'uk english male',
+        'google uk english male',
+        'microsoft guy',        // Edge/Windows voices
+        'microsoft mark',
+        'microsoft david',
+      ];
+      if (warmMalePreference.some(p => name.includes(p))) {
+        return true;
+      }
+
       // Prefer deep, relaxed male voices
       // Priority 1: Deep male voices (lower pitch indicators)
       if (name.includes('david') || name.includes('james') || name.includes('john') || 
           name.includes('mike') || name.includes('thomas') || name.includes('robert')) {
-        console.log(`Found deep male voice: ${v.name}`);
         return true;
       }
       // Priority 2: Generic male indicators
       if (name.includes('male') || name.includes('guy') || name.includes('man')) {
-        console.log(`Found generic male voice: ${v.name}`);
         return true;
       }
       // Priority 3: Other common male names
       if (name.includes('alex') || name.includes('chris') || name.includes('daniel') ||
           name.includes('michael') || name.includes('william') || name.includes('richard')) {
-        console.log(`Found common male voice: ${v.name}`);
         return true;
       }
       
@@ -263,7 +287,6 @@ const findVoiceFromList = (voices: SpeechSynthesisVoice[], preferredType: VoiceT
       if (name.includes('en-us') && !name.includes('female') && !name.includes('samantha') && 
           !name.includes('victoria') && !name.includes('sarah') && !name.includes('emma') && 
           !name.includes('lisa') && !name.includes('karen') && !name.includes('helena')) {
-        console.log(`Found potential male voice by exclusion: ${v.name}`);
         return true;
       }
       
@@ -273,11 +296,8 @@ const findVoiceFromList = (voices: SpeechSynthesisVoice[], preferredType: VoiceT
           !name.includes('sarah') && !name.includes('emma') && !name.includes('lisa') &&
           !name.includes('karen') && !name.includes('helena') && !name.includes('zoe') &&
           !name.includes('ava') && !name.includes('sophie')) {
-        console.log(`Found potential male voice by female exclusion: ${v.name}`);
         return true;
       }
-      
-      console.log(`Voice ${v.name} doesn't match male criteria`);
       return false;
     } else {
       return name.includes('female') || name.includes('samantha') || name.includes('victoria') ||
@@ -294,6 +314,17 @@ const findVoiceFromList = (voices: SpeechSynthesisVoice[], preferredType: VoiceT
         const aName = a.name.toLowerCase();
         const bName = b.name.toLowerCase();
         
+        // Strong warm preference ordering
+        const warmOrder = ['alex', 'tom', 'daniel', 'matthew', 'siri male', 'siri (male)', 'microsoft mark', 'microsoft david'];
+        const aWarmIdx = warmOrder.findIndex(w => aName.includes(w));
+        const bWarmIdx = warmOrder.findIndex(w => bName.includes(w));
+        if (aWarmIdx !== -1 || bWarmIdx !== -1) {
+          if (aWarmIdx === -1) return 1;
+          if (bWarmIdx === -1) return -1;
+          if (aWarmIdx < bWarmIdx) return -1;
+          if (aWarmIdx > bWarmIdx) return 1;
+        }
+
         // David, James, John are typically deeper voices
         const aDeep = aName.includes('david') || aName.includes('james') || aName.includes('john');
         const bDeep = bName.includes('david') || bName.includes('james') || bName.includes('john');
@@ -303,16 +334,13 @@ const findVoiceFromList = (voices: SpeechSynthesisVoice[], preferredType: VoiceT
         return 0;
       });
       
-      console.log(`Sorted male voices by depth:`, genderVoices.map(v => v.name));
     }
     
     const finalVoice = genderVoices[0];
-    console.log(`Final selected voice: ${finalVoice.name} (${finalVoice.lang})`);
     return finalVoice;
   }
 
   // If no gender-specific voices found, use first English voice
-  console.log('No gender-specific voices, using first English voice');
   return englishVoices[0];
 };
 
@@ -321,30 +349,27 @@ export const speak = async (text: string, options?: { lang?: string; rate?: numb
     if (!('speechSynthesis' in window)) return;
     
     const { voiceType, voiceVolume } = getVoiceSettings();
-    console.log('Voice settings loaded:', { voiceType, voiceVolume });
-    
     const voice = findAppropriateVoice(voiceType);
     
     const utter = new SpeechSynthesisUtterance(text);
     utter.lang = options?.lang ?? 'en-US';
     
-    // Set specific properties for male voices to make them deeper and more relaxed
+    // Voice tuning per type for a warmer, more human sound
     if (voiceType === 'male') {
-      utter.rate = options?.rate ?? 0.85;  // Slower rate for relaxed feel
-      utter.pitch = options?.pitch ?? 0.7;  // Lower pitch for deeper voice
+      // Slightly slower and slightly lower than default, avoiding overly deep/robotic tone
+      utter.rate = options?.rate ?? 0.95;
+      utter.pitch = options?.pitch ?? 0.9;
+    } else if (voiceType === 'system') {
+      // Tune for a warm, natural female variant
+      utter.rate = options?.rate ?? 1.0;
+      utter.pitch = options?.pitch ?? 1.05;
     } else {
       utter.rate = options?.rate ?? 1.0;
       utter.pitch = options?.pitch ?? 1.0;
     }
     
     utter.volume = options?.volume ?? voiceVolume;
-    
-    if (voice) {
-      utter.voice = voice;
-      console.log(`Using voice: ${voice.name} (${voice.lang}) for type: ${voiceType} with rate: ${utter.rate}, pitch: ${utter.pitch}`);
-    } else {
-      console.log(`No voice found for type: ${voiceType}, using default`);
-    }
+    if (voice) utter.voice = voice;
     
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utter);
