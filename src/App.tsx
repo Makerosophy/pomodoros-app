@@ -158,24 +158,45 @@ function App() {
     mode: 'workday' | 'cycles';
   };
 
-  const writeSessionRecord = useCallback(() => {
-    const totalActive = cumulativeActiveSec;
-    const totalBreak = cumulativeBreakSec;
+  const writeSessionRecord = useCallback((opts?: { includeLastPomodoro?: boolean }) => {
+    let totalActive = cumulativeActiveSec;
+    let totalBreak = cumulativeBreakSec;
     if (totalActive + totalBreak <= 0) return; // ignore empty sessions
     try {
       const now = Date.now();
       const day = new Date();
       const dateKey = `${day.getFullYear()}-${(day.getMonth()+1).toString().padStart(2,'0')}-${day.getDate().toString().padStart(2,'0')}`;
       const profile = currentProfile;
+      const effectivePomodoros = (pomodorosCompleted || 0) + (opts?.includeLastPomodoro ? 1 : 0);
+
+      // Snap totals for Cycles sessions to exact configured durations to avoid off-by-one
+      if (runMode === 'cycles' && effectivePomodoros > 0) {
+        // Active time is pomodoros * pomodoroDuration
+        totalActive = effectivePomodoros * pomodoroDuration;
+        // Breaks count is pomodoros - 1 (no trailing break after last pomodoro)
+        const breaksCount = Math.max(0, effectivePomodoros - 1);
+        let longCount = 0;
+        let shortCount = 0;
+        if (scheduleType === 'shortOnly') {
+          shortCount = breaksCount;
+        } else if (scheduleType === 'longOnly') {
+          longCount = breaksCount;
+        } else {
+          for (let n = 1; n <= breaksCount; n++) {
+            if (longEvery > 0 && n % longEvery === 0) longCount++; else shortCount++;
+          }
+        }
+        totalBreak = (shortCount * shortBreakDuration) + (longCount * longBreakDuration);
+      }
       const rec: SessionRecord = {
         id: `${now}`,
         dateKey,
         profile,
         active: totalActive,
         break: totalBreak,
-        short: cumulativeShortBreakSec,
-        long: cumulativeLongBreakSec,
-        pomodoros: pomodorosCompleted,
+        short: runMode === 'cycles' ? Math.max(0, Math.min(totalBreak, Math.floor(totalBreak / Math.max(1, shortBreakDuration)) * shortBreakDuration)) : cumulativeShortBreakSec,
+        long: runMode === 'cycles' ? (totalBreak - (runMode === 'cycles' ? Math.max(0, Math.min(totalBreak, Math.floor(totalBreak / Math.max(1, shortBreakDuration)) * shortBreakDuration)) : 0)) : cumulativeLongBreakSec,
+        pomodoros: Math.max(0, effectivePomodoros),
         startedAt: now - (elapsedWorkdayTime * 1000),
         endedAt: now,
         mode: runMode,
@@ -185,7 +206,7 @@ function App() {
       arr.push(rec);
       localStorage.setItem(STORAGE.SESSIONS, JSON.stringify(arr));
     } catch {}
-  }, [cumulativeActiveSec, cumulativeBreakSec, cumulativeShortBreakSec, cumulativeLongBreakSec, pomodorosCompleted, elapsedWorkdayTime, currentProfile, runMode]);
+  }, [cumulativeActiveSec, cumulativeBreakSec, cumulativeShortBreakSec, cumulativeLongBreakSec, pomodorosCompleted, elapsedWorkdayTime, currentProfile, runMode, pomodoroDuration, shortBreakDuration, longBreakDuration, scheduleType, longEvery]);
 
   // Switch current profile: take a snapshot first to attribute deltas to the previous profile,
   // then update the current profile in storage and state.
@@ -281,7 +302,8 @@ function App() {
       playFinalChimeByName(sound);
       announceEnd();
       writeDiarySnapshot();
-      writeSessionRecord();
+      // Include the last pomodoro that just finished if applicable
+      writeSessionRecord({ includeLastPomodoro: currentTimerType === 'pomodoro' });
       // Reset state after short delay to let chime ring without immediate UI changes
       setTimeout(() => {
         setIsTimerRunning(false);

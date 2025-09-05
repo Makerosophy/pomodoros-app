@@ -107,7 +107,7 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
     merged[todayKey].byProfile = bp;
   }
 
-  const [range, setRange] = React.useState<'7' | '30' | 'all'>('7');
+  const [range, setRange] = React.useState<'today' | '7' | '30' | 'all'>('7');
   const [profileFilter, setProfileFilter] = React.useState<string>('all');
 
   // Forza il re-render quando cambiano i contatori live
@@ -176,16 +176,28 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
   const allProfiles = useMemo<string[]>(() => Array.from(new Set(sessions.map(s => s.profile))).sort(), [sessions]);
   const sessionsInRange = sessions.filter((s) => {
     if (range === 'all') return true;
+    if (range === 'today') return s.dateKey === todayKey;
     const d = new Date(s.dateKey + 'T00:00:00');
     const now2 = new Date();
     const diffDays = Math.floor((now2.getTime() - d.getTime()) / 86400000);
     return diffDays < Number(range);
   }).sort((a,b) => b.endedAt - a.endedAt);
   const sessionsFiltered = sessionsInRange.filter(s => profileFilter === 'all' ? true : s.profile === profileFilter);
+  // Pagination for Completed Sessions
+  const PAGE_SIZE = 20;
+  const [page, setPage] = React.useState(1);
+  React.useEffect(() => { setPage(1); }, [range, profileFilter]);
+  const totalPages = Math.max(1, Math.ceil(sessionsFiltered.length / PAGE_SIZE));
+  const startIdx = (page - 1) * PAGE_SIZE;
+  const endIdx = Math.min(sessionsFiltered.length, startIdx + PAGE_SIZE);
+  const pagedSessions = sessionsFiltered.slice(startIdx, endIdx);
   const totals = sessionsFiltered.reduce((acc, s) => {
-    acc.active += s.active || 0;
-    acc.brk += s.break || 0;
-    acc.poms += s.pomodoros || 0;
+    const active = Math.max(0, (s as any).active ?? 0);
+    const brk = Math.max(0, (s as any).break ?? (s as any).brk ?? 0);
+    acc.active += active;
+    acc.brk += brk;
+    // Total Pomodoros: sum exact pomodoros per session record
+    acc.poms += Math.max(0, (s as any).pomodoros ?? 0);
     return acc;
   }, { active: 0, brk: 0, poms: 0 });
   // Add today's live counters to totals view, respecting profile filter
@@ -193,19 +205,15 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
   if (shouldAddLive) {
     const diaryEntry = entries[todayKey];
     if (diaryEntry && diaryEntry._baseActive !== undefined) {
-      // Combina i valori salvati con i delta live per la visualizzazione
+      // Add only live deltas for active/break; Total Pomodoros must reflect completed sessions only
       const deltaActive = Math.max(0, currentActive - (diaryEntry._baseActive || 0));
       const deltaBreak = Math.max(0, currentBreak - (diaryEntry._baseBreak || 0));
-      const deltaPoms = Math.max(0, currentPoms - (diaryEntry._basePoms || 0));
-      
-      totals.active += (diaryEntry.active || 0) + deltaActive;
-      totals.brk += (diaryEntry.brk || 0) + deltaBreak;
-      totals.poms += (diaryEntry.poms || 0) + deltaPoms;
+      totals.active += deltaActive;
+      totals.brk += deltaBreak;
     } else {
-      // If there's no entry in the Diary yet, use live counters
+      // If there's no diary baseline yet, add current live counters as deltas (exclude pomodoros)
       totals.active += Math.max(0, currentActive || 0);
       totals.brk += Math.max(0, currentBreak || 0);
-      totals.poms += Math.max(0, currentPoms || 0);
     }
   }
   const totalOverall = totals.active + totals.brk;
@@ -221,22 +229,23 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
     profileTotals[s.profile] = pt;
   });
   
-  // Add today's values from the Diary for the current profile
+  // Add live deltas for today's current profile (avoid double counting saved values)
   if (shouldAddLive && currentProfile) {
     const diaryEntry = entries[todayKey];
-    if (diaryEntry && diaryEntry.byProfile && diaryEntry.byProfile[currentProfile]) {
-      const todayProfile = diaryEntry.byProfile[currentProfile];
-      const pt = profileTotals[currentProfile] || { active: 0, brk: 0, poms: 0 };
-      // Calculate live deltas for this profile
+    const pt = profileTotals[currentProfile] || { active: 0, brk: 0, poms: 0 };
+    if (diaryEntry && diaryEntry._baseActive !== undefined) {
       const deltaActive = Math.max(0, currentActive - (diaryEntry._baseActive || 0));
       const deltaBreak = Math.max(0, currentBreak - (diaryEntry._baseBreak || 0));
       const deltaPoms = Math.max(0, currentPoms - (diaryEntry._basePoms || 0));
-      
-      pt.active += (todayProfile.active || 0) + deltaActive;
-      pt.brk += (todayProfile.brk || 0) + deltaBreak;
-      pt.poms += (todayProfile.poms || 0) + deltaPoms;
-      profileTotals[currentProfile] = pt;
+      pt.active += deltaActive;
+      pt.brk += deltaBreak;
+      pt.poms += deltaPoms;
+    } else {
+      pt.active += Math.max(0, currentActive || 0);
+      pt.brk += Math.max(0, currentBreak || 0);
+      pt.poms += Math.max(0, currentPoms || 0);
     }
+    profileTotals[currentProfile] = pt;
   }
   const topProfile = Object.keys(profileTotals).reduce<{ name: string; active: number } | null>((best, name) => {
     const a = profileTotals[name].active;
@@ -252,6 +261,7 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
         <div className="flex items-center gap-2">
           <span className={`text-xs ${rowText}`}>Interval</span>
           <select value={range} onChange={(e) => setRange(e.target.value as any)} className={`text-xs rounded px-2 py-1 ${theme==='gold'?'bg-white text-gray-900 border border-gray-300':'bg-gray-800 text-gray-100 border border-gray-700'}`}>
+            <option value="today">Today</option>
             <option value="7">7 days</option>
             <option value="30">30 days</option>
             <option value="all">All</option>
@@ -290,7 +300,8 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
       <div className={`border rounded p-2 ${cardClass}`}>
         <div className={`text-sm font-semibold ${rowText}`}>Completed Sessions</div>
         <div className="mt-2">
-          <div className={`hidden sm:grid grid-cols-5 gap-2 text-[11px] font-semibold ${rowText} mb-2 text-center`}>
+          <div className={`hidden sm:grid grid-cols-6 gap-2 text-[11px] font-semibold ${rowText} mb-2 text-center`}>
+            <div>Pomodoros</div>
             <div>Activity</div>
             <div>Total</div>
             <div>Active</div>
@@ -302,8 +313,10 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
             <div className={`text-xs ${rowText}`}>No sessions</div>
           )}
           
-          {sessionsFiltered.map((s, idx) => {
-            const total = s.active + s.break;
+          {pagedSessions.map((s, idx) => {
+            const active = Math.max(0, (s as any).active ?? 0);
+            const brk = Math.max(0, (s as any).break ?? (s as any).brk ?? 0);
+            const total = active + brk;
             const ended = new Date(s.endedAt);
             const timeStr = `${ended.getHours().toString().padStart(2,'0')}:${ended.getMinutes().toString().padStart(2,'0')}`;
             const zebra = theme === 'gold'
@@ -312,7 +325,11 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
             
             return (
               <div key={s.id} className={`text-xs ${rowText} border rounded p-2 ${cardClass} ${zebra}`}>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
+                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-center">
+                  <div>
+                    <div className="sm:hidden opacity-70">Pomodoros</div>
+                    <div className="font-mono text-sm">{s.pomodoros}</div>
+                  </div>
                   <div>
                     <div className="sm:hidden opacity-70">Activity</div>
                     <div className="text-sm font-semibold">{s.profile}</div>
@@ -323,11 +340,11 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
                   </div>
                   <div>
                     <div className="sm:hidden opacity-70">Active</div>
-                    <div className="font-mono text-sm">{formatMinSec(s.active)}</div>
+                    <div className="font-mono text-sm">{formatMinSec(active)}</div>
                   </div>
                   <div>
                     <div className="sm:hidden opacity-70">Break</div>
-                    <div className="font-mono text-sm">{formatMinSec(s.break)}</div>
+                    <div className="font-mono text-sm">{formatMinSec(brk)}</div>
                   </div>
                   <div>
                     <div className="sm:hidden opacity-70">Date/Stop</div>
@@ -337,6 +354,28 @@ const Diary: React.FC<DiaryProps> = ({ theme, currentActive = 0, currentBreak = 
               </div>
             );
           })}
+
+          {/* Pagination controls */}
+          {sessionsFiltered.length > 0 && (
+            <div className="flex items-center justify-between mt-3">
+              <div className={`text-[11px] ${rowText}`}>
+                Showing {sessionsFiltered.length === 0 ? 0 : (startIdx + 1)}–{endIdx} of {sessionsFiltered.length}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  className={`${theme==='gold' ? 'bg-gray-200 hover:bg-gray-300 text-gray-900' : 'bg-gray-700 hover:bg-gray-600 text-gray-100'} text-[11px] font-semibold py-1 px-2 rounded disabled:opacity-50 disabled:cursor-not-allowed`}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                >Prev</button>
+                <span className={`text-[11px] ${rowText}`}>Page {page} / {totalPages}</span>
+                <button
+                  className={`${theme==='gold' ? 'bg-gray-200 hover:bg-gray-300 text-gray-900' : 'bg-gray-700 hover:bg-gray-600 text-gray-100'} text-[11px] font-semibold py-1 px-2 rounded disabled:opacity-50 disabled:cursor-not-allowed`}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                >Next</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       {/* Vista storica per-day rimossa per semplificazione */}
