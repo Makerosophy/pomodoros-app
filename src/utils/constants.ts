@@ -10,6 +10,7 @@ export const STORAGE = {
   SOUND: 'tempo_sound',
   VOICE: 'tempo_voice',
   VOICE_VOLUME: 'tempo_voice_volume',
+  RUNTIME: 'tempo_runtime',
 } as const;
 
 export type ThemeName = 'blue' | 'gold' | 'neo' | 'cosmic' | 'glass' | 'chrono';

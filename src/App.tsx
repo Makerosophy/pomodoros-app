@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import Timer from './components/Timer';
 import TimerSettings from './components/TimerSettings';
 import WorkdayProgress from './components/WorkdayProgress';
@@ -52,6 +52,43 @@ function App() {
       return 'Default';
     }
   });
+
+  // Ensure robust time accumulation even when the tab is throttled or backgrounded
+  const lastTickRef = useRef<number | null>(null);
+  const processDelta = useCallback(() => {
+    if (!isTimerRunning) return;
+    const now = Date.now();
+    if (lastTickRef.current == null) {
+      lastTickRef.current = now;
+      return;
+    }
+    const deltaMs = Math.max(0, now - lastTickRef.current);
+    const deltaSec = Math.floor(deltaMs / 1000);
+    if (deltaSec <= 0) return;
+    lastTickRef.current += deltaSec * 1000;
+
+    // Update elapsed workday time with clamping when in workday mode
+    setElapsedWorkdayTime((prev) => {
+      const next = prev + deltaSec;
+      if (runMode === 'workday' && next >= workdayDuration) {
+        setIsTimerRunning(false);
+        try { alert('Workday completed!'); } catch {}
+      }
+      return next;
+    });
+
+    // Update cumulative counters based on current phase
+    if (currentTimerType === 'pomodoro') {
+      setCumulativeActiveSec((a) => a + deltaSec);
+    } else {
+      setCumulativeBreakSec((b) => b + deltaSec);
+      if (currentTimerType === 'shortBreak') {
+        setCumulativeShortBreakSec((s) => s + deltaSec);
+      } else if (currentTimerType === 'longBreak') {
+        setCumulativeLongBreakSec((l) => l + deltaSec);
+      }
+    }
+  }, [isTimerRunning, currentTimerType, runMode, workdayDuration]);
 
   const handleSettingsChange = useCallback((settings: {
     pomodoro: number;
@@ -249,12 +286,48 @@ function App() {
     setCumulativePomodoros(0);
     setPomodorosCompleted(0);
     announcePhase('pomodoro');
+
+    // Persist runtime info for catch-up if the app closes
+    try {
+      const runtime = {
+        isRunning: true,
+        currentType: 'pomodoro' as const,
+        startedAt: Date.now(),
+        plannedEndAt: Date.now() + pomodoroDuration * 1000,
+        pomodorosCompleted,
+        scheduleType,
+        longEvery,
+        durations: { pomodoroDuration, shortBreakDuration, longBreakDuration },
+        runMode,
+        targetCycles,
+      };
+      localStorage.setItem(STORAGE.RUNTIME, JSON.stringify(runtime));
+    } catch {}
   };
 
   const resumeTimer = async () => {
     await resumeAudioContext();
     setIsTimerRunning(true);
     if (hapticsEnabled) vibrateShort();
+
+    // Update runtime persistence
+    try {
+      const now = Date.now();
+      const dur = getCurrentDuration();
+      const runtime = {
+        isRunning: true,
+        currentType: currentTimerType,
+        startedAt: now,
+        plannedEndAt: now + dur * 1000,
+        pomodorosCompleted,
+        scheduleType,
+        longEvery,
+        durations: { pomodoroDuration, shortBreakDuration, longBreakDuration },
+        runMode,
+        targetCycles,
+      };
+      localStorage.setItem(STORAGE.RUNTIME, JSON.stringify(runtime));
+    } catch {}
   };
 
 
@@ -353,6 +426,9 @@ function App() {
     }
     // Defer auto-start to a dedicated effect to avoid race conditions
     setPendingAutoStart(true);
+
+    // Update runtime persistence for the upcoming segment will be done in the auto-start effect.
+    try { localStorage.removeItem(STORAGE.RUNTIME); } catch {}
   }, [currentTimerType, elapsedWorkdayTime, workdayDuration, pomodorosCompleted, longEvery, runMode, targetCycles, sound]);
 
   const handleReset = () => {
@@ -369,39 +445,35 @@ function App() {
     setPomodorosCompleted(0);
     setHasEverStarted(false);
     setSessionId((s) => s + 1);
+    try { localStorage.removeItem(STORAGE.RUNTIME); } catch {}
   };
 
   useEffect(() => {
     let interval: number | null = null;
+    const tick = () => processDelta();
     if (isTimerRunning) {
-      interval = window.setInterval(() => {
-        // Aggiorna il tempo trascorso
-        setElapsedWorkdayTime((prev) => {
-          const next = prev + 1;
-          if (next >= workdayDuration) {
-            setIsTimerRunning(false);
-            alert('Workday completed!');
-          }
-          return next;
-        });
-        
-        // Aggiorna i contatori cumulativi (fuori dal setState per evitare race conditions)
-        if (currentTimerType === 'pomodoro') {
-          setCumulativeActiveSec((a) => a + 1);
-        } else {
-          setCumulativeBreakSec((b) => b + 1);
-          if (currentTimerType === 'shortBreak') {
-            setCumulativeShortBreakSec((s) => s + 1);
-          } else if (currentTimerType === 'longBreak') {
-            setCumulativeLongBreakSec((l) => l + 1);
-          }
-        }
-      }, 1000);
+      lastTickRef.current = Date.now();
+      interval = window.setInterval(tick, 1000);
+    } else {
+      lastTickRef.current = null;
     }
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isTimerRunning]); // Solo isTimerRunning come dipendenza per mantenere il setInterval stabile
+  }, [isTimerRunning, currentTimerType, processDelta]);
+
+  // Catch up immediately when the tab becomes visible or window gains focus
+  useEffect(() => {
+    const handleVisibilityOrFocus = () => processDelta();
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    window.addEventListener('pageshow', handleVisibilityOrFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      window.removeEventListener('pageshow', handleVisibilityOrFocus);
+    };
+  }, [processDelta]);
 
   // Load saved theme at startup
   useEffect(() => {
@@ -508,6 +580,50 @@ function App() {
     }
   }, []);
 
+  // On mount, attempt to catch up a possibly running segment from persisted runtime info
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE.RUNTIME);
+      if (!raw) return;
+      const rt = JSON.parse(raw) as {
+        isRunning: boolean;
+        currentType: 'pomodoro' | 'shortBreak' | 'longBreak';
+        startedAt: number;
+        plannedEndAt: number;
+        pomodorosCompleted: number;
+      };
+      if (!rt.isRunning) return;
+
+      const now = Date.now();
+      // Fast-forward counters if needed
+      const elapsedSinceStart = Math.max(0, Math.floor((now - rt.startedAt) / 1000));
+      if (elapsedSinceStart > 0) {
+        if (rt.currentType === 'pomodoro') {
+          setCumulativeActiveSec((a) => a + elapsedSinceStart);
+        } else {
+          setCumulativeBreakSec((b) => b + elapsedSinceStart);
+          if (rt.currentType === 'shortBreak') setCumulativeShortBreakSec((s) => s + elapsedSinceStart);
+          if (rt.currentType === 'longBreak') setCumulativeLongBreakSec((l) => l + elapsedSinceStart);
+        }
+        setElapsedWorkdayTime((e) => e + elapsedSinceStart);
+      }
+
+      if (now >= rt.plannedEndAt) {
+        // The segment should have finished while closed; trigger the normal completion logic
+        setCurrentTimerType(rt.currentType);
+        setIsTimerRunning(true);
+        setTimeout(() => {
+          setIsTimerRunning(false);
+          handleTimerEnd();
+        }, 0);
+      } else {
+        // Resume the current segment with remaining time
+        setCurrentTimerType(rt.currentType);
+        setIsTimerRunning(true);
+      }
+    } catch {}
+  }, []);
+
   // Persist cumulative counters on change
   useEffect(() => {
     try {
@@ -545,6 +661,25 @@ function App() {
       setSessionId((s) => s + 1);
       setIsTimerRunning(true);
       setPendingAutoStart(false);
+
+      // Refresh runtime persistence for the new segment
+      try {
+        const now = Date.now();
+        const dur = getCurrentDuration();
+        const runtime = {
+          isRunning: true,
+          currentType: currentTimerType,
+          startedAt: now,
+          plannedEndAt: now + dur * 1000,
+          pomodorosCompleted,
+          scheduleType,
+          longEvery,
+          durations: { pomodoroDuration, shortBreakDuration, longBreakDuration },
+          runMode,
+          targetCycles,
+        };
+        localStorage.setItem(STORAGE.RUNTIME, JSON.stringify(runtime));
+      } catch {}
     }
   }, [pendingAutoStart, currentTimerType]);
 
