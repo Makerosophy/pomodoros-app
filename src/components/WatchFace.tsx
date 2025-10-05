@@ -34,7 +34,14 @@ const WatchFace: React.FC<WatchFaceProps> = ({ theme, onThemeChange, children })
         <div className={`w-full h-full rounded-[28px] border-4 shadow-[inset_0_0_18px_rgba(0,0,0,0.35),0_10px_24px_rgba(0,0,0,0.6)] ${bezelClass}`}>
           {/* Top bar: title + theme toggle */}
           <div className="flex items-center justify-between px-4 pt-3 text-xs">
-            <span className={`tracking-widest font-bold ${isLight ? 'text-tempoBlue' : 'text-tempoGold'}`}>TEMPO</span>
+            <span className="flex items-center gap-2">
+              <img src="/clessidia.svg" alt="Clessidia" className="w-4 h-4 drop-shadow" />
+              <span
+                className={`tracking-widest font-bold rounded px-2 py-0.5 shadow-sm ${
+                  isLight ? 'bg-white/80 text-gray-900' : 'bg-black/50 text-white'
+                }`}
+              >CLESSIDIA</span>
+            </span>
             {onThemeChange && (
               <div className="flex gap-1">
                 {['blue','gold','neo','cosmic','glass','chrono'].map((t) => (

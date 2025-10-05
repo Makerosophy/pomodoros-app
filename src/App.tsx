@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { signInWithGoogle, onAuth, logout, saveSession, fetchLastSessions } from './services/firebase';
 import Timer from './components/Timer';
 import TimerSettings from './components/TimerSettings';
 import WorkdayProgress from './components/WorkdayProgress';
@@ -38,6 +39,7 @@ function App() {
   const [hapticsEnabled, setHapticsEnabled] = useState<boolean>(true);
   const [scheduleType, setScheduleType] = useState<'standard' | 'shortOnly' | 'longOnly'>('standard');
   const [showDiary, setShowDiary] = useState<boolean>(false);
+  const [userId, setUserId] = useState<string | null>(null);
   const [sound, setSound] = useState<SoundName>(() => {
     try {
       const s = localStorage.getItem(STORAGE.SOUND) as SoundName | null;
@@ -110,6 +112,50 @@ function App() {
     setScheduleType(settings.scheduleType);
     setShowSettings(false);
   }, []);
+
+  // Subscribe to Firebase Auth state (if configured)
+  useEffect(() => {
+    try {
+      const unsub = onAuth((user) => {
+        setUserId(user?.uid ?? null);
+      });
+      return () => { try { unsub(); } catch {} };
+    } catch {
+      // Firebase not configured yet; ignore
+    }
+  }, []);
+
+  // On login: fetch last 30 days of sessions from Firestore and merge into local cache
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      try {
+        const cloud = await fetchLastSessions(userId, 30);
+        const raw = localStorage.getItem(STORAGE.SESSIONS);
+        const local = raw ? (JSON.parse(raw) as Array<{ id: string; endedAt: number }>) : [];
+        const existing = new Set(local.map((s) => s.endedAt));
+        const merged = [...local];
+        for (const c of cloud) {
+          if (!existing.has(c.ended_at)) {
+            merged.push({
+              id: (c as any).id || String(c.ended_at),
+              dateKey: c.date_key,
+              profile: c.profile,
+              active: c.active,
+              break: c.break,
+              short: c.short,
+              long: c.long,
+              pomodoros: c.pomodoros,
+              startedAt: c.started_at,
+              endedAt: c.ended_at,
+              mode: c.mode,
+            } as any);
+          }
+        }
+        localStorage.setItem(STORAGE.SESSIONS, JSON.stringify(merged));
+      } catch {}
+    })();
+  }, [userId]);
 
   const writeDiarySnapshot = () => {
     try {
@@ -242,8 +288,29 @@ function App() {
       const arr = raw ? (JSON.parse(raw) as SessionRecord[]) : [];
       arr.push(rec);
       localStorage.setItem(STORAGE.SESSIONS, JSON.stringify(arr));
+
+      // If logged in, also persist to Firestore (best-effort)
+      try {
+        if (userId) {
+          const cloud = {
+            user_id: userId,
+            date_key: dateKey,
+            profile: profile,
+            active: rec.active,
+            break: rec.break,
+            short: rec.short,
+            long: rec.long,
+            pomodoros: rec.pomodoros,
+            started_at: rec.startedAt,
+            ended_at: rec.endedAt,
+            mode: rec.mode,
+          } as const;
+          // Fire-and-forget; do not block UI
+          void saveSession(cloud);
+        }
+      } catch {}
     } catch {}
-  }, [cumulativeActiveSec, cumulativeBreakSec, cumulativeShortBreakSec, cumulativeLongBreakSec, pomodorosCompleted, elapsedWorkdayTime, currentProfile, runMode, pomodoroDuration, shortBreakDuration, longBreakDuration, scheduleType, longEvery]);
+  }, [cumulativeActiveSec, cumulativeBreakSec, cumulativeShortBreakSec, cumulativeLongBreakSec, pomodorosCompleted, elapsedWorkdayTime, currentProfile, runMode, pomodoroDuration, shortBreakDuration, longBreakDuration, scheduleType, longEvery, userId]);
 
   // Switch current profile: take a snapshot first to attribute deltas to the previous profile,
   // then update the current profile in storage and state.
@@ -270,6 +337,37 @@ function App() {
         return pomodoroDuration;
     }
   };
+
+  // Manual sync control
+  const handleSyncNow = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const cloud = await fetchLastSessions(userId, 30);
+      const raw = localStorage.getItem(STORAGE.SESSIONS);
+      const local = raw ? (JSON.parse(raw) as Array<{ id: string; endedAt: number }>) : [];
+      const existing = new Set(local.map((s) => s.endedAt));
+      const merged = [...local];
+      for (const c of cloud) {
+        if (!existing.has(c.ended_at)) {
+          merged.push({
+            id: (c as any).id || String(c.ended_at),
+            dateKey: c.date_key,
+            profile: c.profile,
+            active: c.active,
+            break: c.break,
+            short: c.short,
+            long: c.long,
+            pomodoros: c.pomodoros,
+            startedAt: c.started_at,
+            endedAt: c.ended_at,
+            mode: c.mode,
+          } as any);
+        }
+      }
+      localStorage.setItem(STORAGE.SESSIONS, JSON.stringify(merged));
+      try { window.dispatchEvent(new CustomEvent('diary-updated')); } catch {}
+    } catch {}
+  }, [userId]);
 
   const startWorkday = () => {
     // bump session to force fresh timer from settings
@@ -781,6 +879,23 @@ function App() {
               className={`${theme==='gold' ? 'bg-amber-300 hover:bg-amber-400 text-black' : 'bg-teal-600 hover:bg-teal-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
               onClick={() => { try { writeDiarySnapshot(); } catch {} setShowDiary(true); }}
             >Diary</button>
+            {userId && (
+              <button
+                className={`${theme==='gold' ? 'bg-emerald-500 hover:bg-emerald-600 text-black' : 'bg-emerald-600 hover:bg-emerald-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
+                onClick={handleSyncNow}
+              >Sync now</button>
+            )}
+            {!userId ? (
+              <button
+                className={`${theme==='gold' ? 'bg-gray-900 hover:bg-black text-white' : 'bg-gray-800 hover:bg-gray-700 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
+                onClick={async () => { try { await signInWithGoogle(); } catch {} }}
+              >Sign in with Google</button>
+            ) : (
+              <button
+                className={`${theme==='gold' ? 'bg-gray-200 hover:bg-gray-300 text-black' : 'bg-gray-700 hover:bg-gray-600 text-white'} font-bold py-2 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 ${theme==='gold' ? 'focus:ring-amber-400 focus:ring-offset-gray-200' : 'focus:ring-blue-400 focus:ring-offset-gray-900'}`}
+                onClick={async () => { try { await logout(); setUserId(null); } catch {} }}
+              >Logout</button>
+            )}
           </div>
           <div className="mt-3 grid grid-cols-1 gap-3 text-xs">
             <WorkdayProgress
